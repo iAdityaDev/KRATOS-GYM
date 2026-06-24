@@ -404,14 +404,34 @@ function getConfig() {
   SUPABASE_KEY = localStorage.getItem('kg_key') || '';
 }
 
-function saveConfig() {
-  const url = document.getElementById('sbUrl').value.trim();
+async function saveConfig() {
+  const url = document.getElementById('sbUrl').value.trim().replace(/\/$/, '');
   const key = document.getElementById('sbKey').value.trim();
-  if (!url || !key) { document.getElementById('setupErr').textContent = 'Both fields required.'; return; }
-  localStorage.setItem('kg_url', url);
-  localStorage.setItem('kg_key', key);
+  const errEl = document.getElementById('setupErr');
+  if (!url || !key) { errEl.textContent = 'Both fields required.'; return; }
+  errEl.textContent = 'Connecting...';
+  errEl.style.color = 'var(--accent)';
   SUPABASE_URL = url; SUPABASE_KEY = key;
-  init();
+  try {
+    const res = await fetch(url + '/rest/v1/settings?id=eq.1', {
+      headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
+    });
+    if (!res.ok) {
+      const e = await res.json();
+      throw new Error(e.message || 'HTTP ' + res.status);
+    }
+    const data = await res.json();
+    if (!data || !data.length) throw new Error('Settings table not found. Did you run the SQL in Supabase?');
+    localStorage.setItem('kg_url', url);
+    localStorage.setItem('kg_key', key);
+    localStorage.setItem('kg_plans', JSON.stringify(data[0].plans));
+    localStorage.setItem('kg_pw', data[0].password);
+    errEl.textContent = 'Connected!';
+    setTimeout(() => showLogin(), 500);
+  } catch(e) {
+    errEl.style.color = 'var(--danger)';
+    errEl.textContent = 'Error: ' + e.message;
+  }
 }
 
 // ── API ──────────────────────────────────────────────────────────────────────
