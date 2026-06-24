@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="theme-color" content="#111111"/>
+<link rel="manifest" href="#"/>
+<title>KRATOS GYM</title>
+<style>
+  :root {
+    --bg: #111111;
+    --surface: #1a1a1a;
+    --surface2: #222222;
+    --border: #2e2e2e;
+    --accent: #e8ff3b;
+    --accent-dim: #c8df20;
+    --text: #f0f0f0;
+    --text2: #888888;
+    --text3: #555555;
+    --danger: #ff4d4d;
+    --warning: #ffaa00;
+    --success: #22c55e;
+    --radius: 10px;
+    --radius-lg: 16px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+
+  /* LAYOUT */
+  .app { display: flex; flex-direction: column; min-height: 100vh; max-width: 480px; margin: 0 auto; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 12px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg); z-index: 10; }
+  .topbar-title { font-size: 18px; font-weight: 700; letter-spacing: 1px; color: var(--accent); }
+  .topbar-sub { font-size: 11px; color: var(--text2); letter-spacing: 0.5px; }
+  .content { flex: 1; padding: 16px 20px 100px; }
+  .bottomnav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; background: var(--surface); border-top: 1px solid var(--border); display: flex; }
+  .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 10px 0 12px; gap: 4px; font-size: 10px; color: var(--text3); cursor: pointer; border: none; background: none; transition: color 0.15s; }
+  .nav-btn.active { color: var(--accent); }
+  .nav-btn svg { width: 22px; height: 22px; }
+
+  /* SCREENS */
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  /* LOGIN */
+  .login-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 40px 24px; }
+  .login-logo { font-size: 36px; font-weight: 900; letter-spacing: 3px; color: var(--accent); margin-bottom: 6px; }
+  .login-tagline { font-size: 12px; color: var(--text2); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 48px; }
+  .login-box { width: 100%; max-width: 360px; }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 6px; letter-spacing: 0.5px; }
+  .field input, .field select, .field textarea { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 15px; padding: 12px 14px; outline: none; transition: border 0.15s; font-family: inherit; }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
+  .field textarea { resize: vertical; min-height: 80px; }
+  .field select option { background: var(--surface); }
+  .btn { width: 100%; padding: 14px; background: var(--accent); color: #111; font-size: 15px; font-weight: 700; border: none; border-radius: var(--radius); cursor: pointer; letter-spacing: 0.5px; transition: background 0.15s; }
+  .btn:hover { background: var(--accent-dim); }
+  .btn:active { transform: scale(0.98); }
+  .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .btn-outline:hover { background: var(--surface2); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-sm { padding: 8px 14px; font-size: 13px; width: auto; border-radius: 8px; }
+  .err { color: var(--danger); font-size: 13px; margin-top: 10px; text-align: center; }
+
+  /* CARDS */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; margin-bottom: 12px; }
+  .card-row { display: flex; justify-content: space-between; align-items: flex-start; }
+  .member-name { font-size: 16px; font-weight: 600; }
+  .member-phone { font-size: 13px; color: var(--text2); margin-top: 2px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; letter-spacing: 0.5px; }
+  .badge-active { background: rgba(34,197,94,0.15); color: var(--success); }
+  .badge-expired { background: rgba(255,77,77,0.15); color: var(--danger); }
+  .badge-soon { background: rgba(255,170,0,0.15); color: var(--warning); }
+  .badge-draft { background: rgba(136,136,136,0.15); color: var(--text2); }
+  .meta-row { display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
+  .meta-item { font-size: 12px; color: var(--text2); }
+  .meta-item span { color: var(--text); font-weight: 500; }
+  .avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--surface2); border: 1px solid var(--border); object-fit: cover; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: var(--accent); }
+
+  /* SEARCH */
+  .search-wrap { position: relative; margin-bottom: 16px; }
+  .search-wrap input { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 14px; padding: 11px 14px 11px 38px; outline: none; }
+  .search-wrap input:focus { border-color: var(--accent); }
+  .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text3); }
+
+  /* STATS */
+  .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 20px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+  .stat-label { font-size: 11px; color: var(--text2); letter-spacing: 0.5px; text-transform: uppercase; }
+  .stat-value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+  .stat-value.accent { color: var(--accent); }
+  .stat-value.danger { color: var(--danger); }
+  .stat-value.warning { color: var(--warning); }
+  .stat-value.success { color: var(--success); }
+
+  /* SECTION HEADER */
+  .sec-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .sec-title { font-size: 13px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 1px; }
+
+  /* FAB */
+  .fab { position: fixed; bottom: 76px; right: 20px; width: 52px; height: 52px; background: var(--accent); color: #111; border: none; border-radius: 50%; font-size: 26px; font-weight: 400; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(232,255,59,0.3); z-index: 50; }
+  @media(min-width: 480px) { .fab { right: calc(50% - 220px); } }
+
+  /* MODAL / SHEET */
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; }
+  .overlay.open { display: flex; align-items: flex-end; justify-content: center; }
+  .sheet { background: var(--surface); border-radius: 20px 20px 0 0; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; padding: 20px 20px 40px; }
+  .sheet-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 20px; }
+  .sheet-title { font-size: 17px; font-weight: 700; margin-bottom: 20px; }
+
+  /* PHOTO UPLOAD */
+  .photo-upload { width: 80px; height: 80px; border-radius: 50%; background: var(--surface2); border: 2px dashed var(--border); cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; overflow: hidden; }
+  .photo-upload img { width: 100%; height: 100%; object-fit: cover; }
+  .photo-upload-label { font-size: 24px; color: var(--text3); }
+
+  /* PLAN PILLS */
+  .plan-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+  .plan-pill { padding: 7px 14px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--text2); font-size: 13px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .plan-pill.selected { background: var(--accent); color: #111; border-color: var(--accent); font-weight: 600; }
+
+  /* MEMBER DETAIL */
+  .detail-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+  .detail-avatar { width: 64px; height: 64px; border-radius: 50%; background: var(--surface2); border: 1px solid var(--border); object-fit: cover; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; color: var(--accent); flex-shrink: 0; }
+  .info-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .info-label { font-size: 13px; color: var(--text2); }
+  .info-val { font-size: 13px; font-weight: 500; text-align: right; max-width: 60%; }
+
+  /* PROGRESS NOTES */
+  .note-card { background: var(--surface2); border-radius: var(--radius); padding: 12px; margin-bottom: 10px; }
+  .note-date { font-size: 11px; color: var(--text3); margin-bottom: 6px; }
+  .note-text { font-size: 14px; color: var(--text); white-space: pre-wrap; }
+
+  /* FILTER TABS */
+  .filter-tabs { display: flex; gap: 8px; margin-bottom: 16px; overflow-x: auto; padding-bottom: 4px; }
+  .filter-tab { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--text2); font-size: 13px; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+  .filter-tab.active { background: var(--accent); color: #111; border-color: var(--accent); font-weight: 600; }
+
+  .empty { text-align: center; padding: 60px 20px; color: var(--text3); font-size: 15px; }
+  .row-btns { display: flex; gap: 8px; margin-top: 14px; }
+  .divider { height: 1px; background: var(--border); margin: 12px 0; }
+  .back-btn { display: flex; align-items: center; gap: 6px; color: var(--text2); font-size: 14px; cursor: pointer; margin-bottom: 16px; background: none; border: none; }
+  .days-badge { font-size: 12px; color: var(--text2); margin-top: 6px; }
+
+  /* SUPABASE CONFIG */
+  .config-box { background: var(--surface2); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; font-size: 13px; color: var(--text2); line-height: 1.6; }
+  .config-box a { color: var(--accent); }
+  .config-box code { background: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 12px; color: var(--text); }
+
+  .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--accent); color: var(--text); font-size: 14px; padding: 10px 20px; border-radius: var(--radius); z-index: 999; opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- ============ SETUP SCREEN ============ -->
+<div id="setupScreen" style="display:none; padding:24px; max-width:480px; margin:0 auto;">
+  <div style="text-align:center; padding:40px 0 30px;">
+    <div style="font-size:32px; font-weight:900; letter-spacing:3px; color:var(--accent);">KRATOS</div>
+    <div style="font-size:11px; color:var(--text2); letter-spacing:2px; margin-top:4px;">GYM MANAGEMENT</div>
+  </div>
+  <div class="config-box">
+    <strong style="color:var(--text);">First-time setup</strong><br><br>
+    This app uses <strong style="color:var(--text);">Supabase</strong> as its database (free, backed up automatically).<br><br>
+    Steps:<br>
+    1. Go to <a href="https://supabase.com" target="_blank">supabase.com</a> → create a free account<br>
+    2. Create a new project<br>
+    3. Go to <code>Settings → API</code><br>
+    4. Copy your <code>Project URL</code> and <code>anon public</code> key below<br>
+    5. Go to <code>SQL Editor</code> and run the SQL shown below
+  </div>
+  <div class="config-box" style="font-size:12px;">
+    <strong style="color:var(--text);">Run this SQL in Supabase SQL Editor:</strong>
+    <pre style="margin-top:8px; background:var(--bg); padding:10px; border-radius:6px; overflow-x:auto; font-size:11px; color:var(--text); white-space:pre-wrap;">
+create table members (
+  id uuid default gen_random_uuid() primary key,
+  name text not null,
+  phone text,
+  address text,
+  photo_url text,
+  plan_name text,
+  fees_paid numeric,
+  days int,
+  start_date date,
+  end_date date,
+  is_draft boolean default false,
+  notes text[],
+  note_dates text[],
+  created_at timestamptz default now()
+);
+alter table members enable row level security;
+create policy "allow all" on members for all using (true);
+
+create table settings (
+  id int primary key default 1,
+  password text,
+  plans jsonb
+);
+insert into settings(id, password, plans) values(
+  1,
+  'gym123',
+  '[{"name":"1 Month","days":30,"fees":500},{"name":"3 Months","days":90,"fees":1300},{"name":"6 Months","days":180,"fees":2400},{"name":"1 Year","days":365,"fees":4500}]'
+);
+    </pre>
+  </div>
+  <div class="field">
+    <label>Supabase Project URL</label>
+    <input type="url" id="sbUrl" placeholder="https://xxxxxxxxxxxx.supabase.co"/>
+  </div>
+  <div class="field">
+    <label>Supabase Anon Key</label>
+    <input type="text" id="sbKey" placeholder="eyJhbGci..."/>
+  </div>
+  <button class="btn" onclick="saveConfig()">Save & Connect</button>
+  <div class="err" id="setupErr"></div>
+</div>
+
+<!-- ============ LOGIN SCREEN ============ -->
+<div id="loginScreen" style="display:none;">
+  <div class="login-wrap">
+    <div class="login-logo">KRATOS</div>
+    <div class="login-tagline">Gym Management</div>
+    <div class="login-box">
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="loginPass" placeholder="Enter password" onkeydown="if(event.key==='Enter') doLogin()"/>
+      </div>
+      <button class="btn" onclick="doLogin()">Enter</button>
+      <div class="err" id="loginErr"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MAIN APP ============ -->
+<div id="mainApp" style="display:none;">
+  <div class="app">
+    <div class="topbar">
+      <div>
+        <div class="topbar-title">KRATOS</div>
+        <div class="topbar-sub">GYM MANAGEMENT</div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="doLogout()">Logout</button>
+    </div>
+    <div class="content">
+
+      <!-- DASHBOARD SCREEN -->
+      <div id="screenDashboard" class="screen active">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Total Members</div>
+            <div class="stat-value accent" id="statTotal">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Active</div>
+            <div class="stat-value success" id="statActive">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Expiring Soon</div>
+            <div class="stat-value warning" id="statSoon">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Expired</div>
+            <div class="stat-value danger" id="statExpired">-</div>
+          </div>
+        </div>
+        <div class="sec-header">
+          <div class="sec-title">Expiring in 7 days</div>
+        </div>
+        <div id="expiringSoonList"></div>
+      </div>
+
+      <!-- MEMBERS SCREEN -->
+      <div id="screenMembers" class="screen">
+        <div class="search-wrap">
+          <svg class="search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" placeholder="Search name or phone..." oninput="filterMembers(this.value)" id="memberSearch"/>
+        </div>
+        <div class="filter-tabs">
+          <button class="filter-tab active" onclick="setFilter('all',this)">All</button>
+          <button class="filter-tab" onclick="setFilter('active',this)">Active</button>
+          <button class="filter-tab" onclick="setFilter('expiring',this)">Expiring Soon</button>
+          <button class="filter-tab" onclick="setFilter('expired',this)">Expired</button>
+          <button class="filter-tab" onclick="setFilter('draft',this)">Drafts</button>
+        </div>
+        <div id="membersList"></div>
+      </div>
+
+      <!-- MEMBER DETAIL SCREEN -->
+      <div id="screenDetail" class="screen">
+        <button class="back-btn" onclick="showScreen('screenMembers')">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="18" height="18"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+          Back
+        </button>
+        <div id="detailContent"></div>
+      </div>
+
+      <!-- SETTINGS SCREEN -->
+      <div id="screenSettings" class="screen">
+        <div class="sec-title" style="margin-bottom:14px;">Membership Plans</div>
+        <div id="plansList"></div>
+        <button class="btn btn-outline" onclick="addPlanRow()" style="margin-top:8px; margin-bottom:20px;">+ Add Plan</button>
+        <button class="btn" onclick="savePlans()">Save Plans</button>
+        <div class="divider" style="margin:24px 0;"></div>
+        <div class="sec-title" style="margin-bottom:14px;">Change Password</div>
+        <div class="field"><label>New Password</label><input type="password" id="newPass" placeholder="Enter new password"/></div>
+        <button class="btn" onclick="changePassword()">Update Password</button>
+      </div>
+
+    </div>
+    <nav class="bottomnav">
+      <button class="nav-btn active" onclick="showScreen('screenDashboard',this)">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Dashboard
+      </button>
+      <button class="nav-btn" onclick="showScreen('screenMembers',this)">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.85"/></svg>
+        Members
+      </button>
+      <button class="nav-btn" onclick="showScreen('screenSettings',this)">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </button>
+    </nav>
+  </div>
+  <button class="fab" onclick="openAddMember()">+</button>
+</div>
+
+<!-- ADD/EDIT MEMBER SHEET -->
+<div class="overlay" id="memberSheet">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title" id="sheetTitle">Add Member</div>
+    <input type="hidden" id="editId"/>
+
+    <div style="text-align:center;">
+      <div class="photo-upload" id="photoPreview" onclick="document.getElementById('photoInput').click()">
+        <span class="photo-upload-label">📷</span>
+      </div>
+      <input type="file" id="photoInput" accept="image/*" style="display:none" onchange="previewPhoto(this)"/>
+      <div style="font-size:12px; color:var(--text3); margin-bottom:16px;">Tap to add photo (optional)</div>
+    </div>
+
+    <div class="field"><label>Full Name *</label><input type="text" id="fName" placeholder="Member name"/></div>
+    <div class="field"><label>Mobile Number</label><input type="tel" id="fPhone" placeholder="10-digit number"/></div>
+    <div class="field"><label>Address (optional)</label><textarea id="fAddress" placeholder="Full address"></textarea></div>
+
+    <div class="field">
+      <label>Membership Plan</label>
+      <div class="plan-pills" id="planPills"></div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      <div class="field"><label>Fees Paid (₹)</label><input type="number" id="fFees" placeholder="0" oninput="calcEndDate()"/></div>
+      <div class="field"><label>Days</label><input type="number" id="fDays" placeholder="30" oninput="calcEndDate()"/></div>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      <div class="field"><label>Start Date</label><input type="date" id="fStart" oninput="calcEndDate()"/></div>
+      <div class="field"><label>End Date</label><input type="date" id="fEnd"/></div>
+    </div>
+
+    <div class="field" style="display:flex; align-items:center; gap:10px; margin-bottom:20px;">
+      <input type="checkbox" id="fDraft" style="width:18px; height:18px; accent-color:var(--accent);"/>
+      <label for="fDraft" style="font-size:14px; color:var(--text); margin-bottom:0;">Save as Draft (incomplete form)</label>
+    </div>
+
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-outline" style="flex:1" onclick="closeMemberSheet()">Cancel</button>
+      <button class="btn" style="flex:2" onclick="saveMember()">Save Member</button>
+    </div>
+    <div class="err" id="memberErr" style="margin-top:10px;"></div>
+  </div>
+</div>
+
+<!-- ADD NOTE SHEET -->
+<div class="overlay" id="noteSheet">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">Add Progress Note</div>
+    <input type="hidden" id="noteTargetId"/>
+    <div class="field"><label>Note / Progress</label><textarea id="noteText" placeholder="E.g. Weight: 75kg, Bench: 60kg, improved stamina..." style="min-height:120px;"></textarea></div>
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-outline" style="flex:1" onclick="closeNoteSheet()">Cancel</button>
+      <button class="btn" style="flex:2" onclick="saveNote()">Save Note</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────────────────────────
+let SUPABASE_URL = '';
+let SUPABASE_KEY = '';
+let plans = [];
+let allMembers = [];
+let currentFilter = 'all';
+let currentSearch = '';
+let photoBase64 = null;
+
+function getConfig() {
+  SUPABASE_URL = localStorage.getItem('kg_url') || '';
+  SUPABASE_KEY = localStorage.getItem('kg_key') || '';
+}
+
+function saveConfig() {
+  const url = document.getElementById('sbUrl').value.trim();
+  const key = document.getElementById('sbKey').value.trim();
+  if (!url || !key) { document.getElementById('setupErr').textContent = 'Both fields required.'; return; }
+  localStorage.setItem('kg_url', url);
+  localStorage.setItem('kg_key', key);
+  SUPABASE_URL = url; SUPABASE_KEY = key;
+  init();
+}
+
+// ── API ──────────────────────────────────────────────────────────────────────
+async function api(path, method='GET', body=null) {
+  const opts = {
+    method,
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': 'Bearer ' + SUPABASE_KEY,
+      'Content-Type': 'application/json',
+      'Prefer': method === 'POST' ? 'return=representation' : ''
+    }
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(SUPABASE_URL + '/rest/v1/' + path, opts);
+  if (!res.ok) { const e = await res.json(); throw new Error(e.message || 'API error'); }
+  return method === 'DELETE' ? null : res.json();
+}
+
+// ── INIT ─────────────────────────────────────────────────────────────────────
+async function init() {
+  getConfig();
+  if (!SUPABASE_URL || !SUPABASE_KEY) { showSetup(); return; }
+  try {
+    const s = await api('settings?id=eq.1');
+    if (!s || !s.length) throw new Error('no settings');
+    localStorage.setItem('kg_plans', JSON.stringify(s[0].plans));
+    localStorage.setItem('kg_pw', s[0].password);
+    showLogin();
+  } catch(e) {
+    if (localStorage.getItem('kg_pw')) { showLogin(); }
+    else { showSetup(); }
+  }
+}
+
+function showSetup() {
+  document.getElementById('setupScreen').style.display = 'block';
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('mainApp').style.display = 'none';
+}
+function showLogin() {
+  document.getElementById('setupScreen').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'block';
+  document.getElementById('mainApp').style.display = 'none';
+}
+async function showMain() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('mainApp').style.display = 'block';
+  await loadPlans();
+  await loadMembers();
+  renderDashboard();
+  renderMembersList();
+  renderPlansSettings();
+}
+
+// ── AUTH ─────────────────────────────────────────────────────────────────────
+async function doLogin() {
+  const pw = document.getElementById('loginPass').value;
+  let stored = localStorage.getItem('kg_pw') || 'gym123';
+  try {
+    const s = await api('settings?id=eq.1');
+    if (s && s.length) { stored = s[0].password; localStorage.setItem('kg_pw', stored); }
+  } catch(e) {}
+  if (pw === stored) { sessionStorage.setItem('kg_auth', '1'); showMain(); }
+  else { document.getElementById('loginErr').textContent = 'Wrong password.'; }
+}
+function doLogout() { sessionStorage.removeItem('kg_auth'); showLogin(); document.getElementById('loginPass').value = ''; }
+
+// ── PLANS ─────────────────────────────────────────────────────────────────────
+async function loadPlans() {
+  try {
+    const s = await api('settings?id=eq.1');
+    if (s && s.length) { plans = s[0].plans; localStorage.setItem('kg_plans', JSON.stringify(plans)); }
+    else { plans = JSON.parse(localStorage.getItem('kg_plans') || '[]'); }
+  } catch(e) { plans = JSON.parse(localStorage.getItem('kg_plans') || '[]'); }
+}
+
+function renderPlansSettings() {
+  const el = document.getElementById('plansList');
+  el.innerHTML = '';
+  plans.forEach((p, i) => {
+    el.innerHTML += `<div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:center;margin-bottom:8px;">
+      <input type="text" value="${p.name}" oninput="plans[${i}].name=this.value" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 10px;font-size:13px;"/>
+      <input type="number" value="${p.days}" oninput="plans[${i}].days=+this.value" placeholder="Days" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 10px;font-size:13px;"/>
+      <input type="number" value="${p.fees}" oninput="plans[${i}].fees=+this.value" placeholder="₹" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 10px;font-size:13px;"/>
+      <button onclick="plans.splice(${i},1);renderPlansSettings()" style="background:none;border:none;color:var(--danger);font-size:18px;cursor:pointer;padding:4px 8px;">×</button>
+    </div>`;
+  });
+}
+
+function addPlanRow() { plans.push({name:'', days:30, fees:0}); renderPlansSettings(); }
+
+async function savePlans() {
+  try {
+    await api('settings?id=eq.1', 'PATCH', {plans});
+    localStorage.setItem('kg_plans', JSON.stringify(plans));
+    toast('Plans saved!');
+    renderPlansSettings();
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+async function changePassword() {
+  const pw = document.getElementById('newPass').value.trim();
+  if (!pw) { toast('Enter a password'); return; }
+  try {
+    await api('settings?id=eq.1', 'PATCH', {password: pw});
+    localStorage.setItem('kg_pw', pw);
+    document.getElementById('newPass').value = '';
+    toast('Password updated!');
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+// ── MEMBERS ───────────────────────────────────────────────────────────────────
+async function loadMembers() {
+  try {
+    allMembers = await api('members?order=created_at.desc');
+  } catch(e) { allMembers = []; }
+}
+
+function memberStatus(m) {
+  if (m.is_draft) return 'draft';
+  if (!m.end_date) return 'active';
+  const days = Math.ceil((new Date(m.end_date) - new Date()) / 86400000);
+  if (days < 0) return 'expired';
+  if (days <= 7) return 'expiring';
+  return 'active';
+}
+
+function statusBadge(m) {
+  const s = memberStatus(m);
+  const labels = {active:'Active', expired:'Expired', expiring:'Expiring Soon', draft:'Draft'};
+  const classes = {active:'badge-active', expired:'badge-expired', expiring:'badge-soon', draft:'badge-draft'};
+  return `<span class="badge ${classes[s]}">${labels[s]}</span>`;
+}
+
+function avatarEl(m, size=44) {
+  const initials = (m.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  if (m.photo_url) {
+    return `<img src="${m.photo_url}" class="avatar" style="width:${size}px;height:${size}px;" onerror="this.style.display='none'"/>`;
+  }
+  return `<div class="avatar" style="width:${size}px;height:${size}px;font-size:${size>50?22:16}px;">${initials}</div>`;
+}
+
+function daysLeft(m) {
+  if (!m.end_date) return '';
+  const d = Math.ceil((new Date(m.end_date) - new Date()) / 86400000);
+  if (d < 0) return `<span style="color:var(--danger);">${Math.abs(d)} days overdue</span>`;
+  return `<span style="color:${d<=7?'var(--warning)':'var(--text2)'};">${d} days left</span>`;
+}
+
+function renderMembersList() {
+  const el = document.getElementById('membersList');
+  let list = allMembers;
+  if (currentFilter !== 'all') list = list.filter(m => memberStatus(m) === currentFilter);
+  if (currentSearch) {
+    const q = currentSearch.toLowerCase();
+    list = list.filter(m => (m.name||'').toLowerCase().includes(q) || (m.phone||'').includes(q));
+  }
+  if (!list.length) { el.innerHTML = '<div class="empty">No members found</div>'; return; }
+  el.innerHTML = list.map(m => `
+    <div class="card" onclick="showDetail('${m.id}')">
+      <div class="card-row">
+        <div style="display:flex;align-items:center;gap:12px;">
+          ${avatarEl(m)}
+          <div>
+            <div class="member-name">${m.name||''}</div>
+            <div class="member-phone">${m.phone||'No phone'}</div>
+          </div>
+        </div>
+        ${statusBadge(m)}
+      </div>
+      <div class="meta-row">
+        <div class="meta-item">Plan: <span>${m.plan_name||'Custom'}</span></div>
+        <div class="meta-item">Fees: <span>₹${m.fees_paid||0}</span></div>
+      </div>
+      <div class="days-badge">${m.end_date ? 'Expires: ' + m.end_date + ' · ' : ''}${daysLeft(m)}</div>
+    </div>
+  `).join('');
+}
+
+function renderDashboard() {
+  const real = allMembers.filter(m => !m.is_draft);
+  document.getElementById('statTotal').textContent = real.length;
+  document.getElementById('statActive').textContent = real.filter(m=>memberStatus(m)==='active').length;
+  document.getElementById('statSoon').textContent = real.filter(m=>memberStatus(m)==='expiring').length;
+  document.getElementById('statExpired').textContent = real.filter(m=>memberStatus(m)==='expired').length;
+  const soon = real.filter(m=>memberStatus(m)==='expiring');
+  const el = document.getElementById('expiringSoonList');
+  if (!soon.length) { el.innerHTML = '<div class="empty" style="padding:20px;">All clear!</div>'; return; }
+  el.innerHTML = soon.map(m=>`
+    <div class="card" onclick="showDetail('${m.id}')">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          ${avatarEl(m)}
+          <div>
+            <div class="member-name">${m.name}</div>
+            <div class="member-phone">${m.phone||''}</div>
+          </div>
+        </div>
+        <div style="text-align:right;font-size:12px;color:var(--warning);">${daysLeft(m)}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterMembers(q) { currentSearch = q; renderMembersList(); }
+function setFilter(f, btn) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderMembersList();
+}
+
+// ── DETAIL ────────────────────────────────────────────────────────────────────
+function showDetail(id) {
+  const m = allMembers.find(x=>x.id===id);
+  if (!m) return;
+  const notes = (m.notes||[]);
+  const noteDates = (m.note_dates||[]);
+  document.getElementById('detailContent').innerHTML = `
+    <div class="detail-header">
+      ${m.photo_url ? `<img src="${m.photo_url}" class="detail-avatar" style="width:64px;height:64px;border-radius:50%;object-fit:cover;"/>` : `<div class="detail-avatar">${(m.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}</div>`}
+      <div>
+        <div style="font-size:20px;font-weight:700;">${m.name}</div>
+        ${statusBadge(m)}
+      </div>
+    </div>
+    <div class="card">
+      <div class="info-row"><span class="info-label">Phone</span><span class="info-val">${m.phone||'—'}</span></div>
+      <div class="info-row"><span class="info-label">Address</span><span class="info-val">${m.address||'—'}</span></div>
+      <div class="info-row"><span class="info-label">Plan</span><span class="info-val">${m.plan_name||'Custom'}</span></div>
+      <div class="info-row"><span class="info-label">Fees Paid</span><span class="info-val">₹${m.fees_paid||0}</span></div>
+      <div class="info-row"><span class="info-label">Days</span><span class="info-val">${m.days||'—'}</span></div>
+      <div class="info-row"><span class="info-label">Start Date</span><span class="info-val">${m.start_date||'—'}</span></div>
+      <div class="info-row" style="border:none;"><span class="info-label">End Date</span><span class="info-val">${m.end_date||'—'} ${daysLeft(m)}</span></div>
+    </div>
+    <div class="row-btns">
+      <button class="btn btn-outline btn-sm" onclick="openEditMember('${id}')">✏️ Edit</button>
+      <button class="btn btn-sm" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);" onclick="openNoteSheet('${id}')">+ Add Note</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteMember('${id}')">Delete</button>
+    </div>
+    <div class="divider"></div>
+    <div class="sec-header"><div class="sec-title">Progress Notes</div></div>
+    ${notes.length ? notes.map((n,i)=>`
+      <div class="note-card">
+        <div class="note-date">${noteDates[i]||''}</div>
+        <div class="note-text">${n}</div>
+      </div>
+    `).join('') : '<div class="empty" style="padding:20px 0;">No notes yet</div>'}
+  `;
+  showScreen('screenDetail');
+}
+
+// ── ADD / EDIT MEMBER ─────────────────────────────────────────────────────────
+function openAddMember() {
+  document.getElementById('editId').value = '';
+  document.getElementById('sheetTitle').textContent = 'Add Member';
+  document.getElementById('fName').value = '';
+  document.getElementById('fPhone').value = '';
+  document.getElementById('fAddress').value = '';
+  document.getElementById('fFees').value = '';
+  document.getElementById('fDays').value = '';
+  document.getElementById('fDraft').checked = false;
+  photoBase64 = null;
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('fStart').value = today;
+  document.getElementById('fEnd').value = '';
+  document.getElementById('memberErr').textContent = '';
+  document.getElementById('photoPreview').innerHTML = '<span class="photo-upload-label">📷</span>';
+  renderPlanPills();
+  document.getElementById('memberSheet').classList.add('open');
+}
+
+function openEditMember(id) {
+  const m = allMembers.find(x=>x.id===id);
+  if (!m) return;
+  document.getElementById('editId').value = id;
+  document.getElementById('sheetTitle').textContent = 'Edit Member';
+  document.getElementById('fName').value = m.name||'';
+  document.getElementById('fPhone').value = m.phone||'';
+  document.getElementById('fAddress').value = m.address||'';
+  document.getElementById('fFees').value = m.fees_paid||'';
+  document.getElementById('fDays').value = m.days||'';
+  document.getElementById('fStart').value = m.start_date||'';
+  document.getElementById('fEnd').value = m.end_date||'';
+  document.getElementById('fDraft').checked = m.is_draft||false;
+  document.getElementById('memberErr').textContent = '';
+  photoBase64 = m.photo_url || null;
+  if (m.photo_url) document.getElementById('photoPreview').innerHTML = `<img src="${m.photo_url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>`;
+  else document.getElementById('photoPreview').innerHTML = '<span class="photo-upload-label">📷</span>';
+  renderPlanPills(m.plan_name);
+  document.getElementById('memberSheet').classList.add('open');
+}
+
+function renderPlanPills(selected='') {
+  const el = document.getElementById('planPills');
+  el.innerHTML = plans.map(p=>`<button class="plan-pill${p.name===selected?' selected':''}" onclick="selectPlan(this,'${p.name}',${p.days},${p.fees})">${p.name}</button>`).join('');
+}
+
+function selectPlan(btn, name, days, fees) {
+  document.querySelectorAll('.plan-pill').forEach(b=>b.classList.remove('selected'));
+  btn.classList.add('selected');
+  document.getElementById('fDays').value = days;
+  document.getElementById('fFees').value = fees;
+  calcEndDate();
+}
+
+function calcEndDate() {
+  const start = document.getElementById('fStart').value;
+  const days = parseInt(document.getElementById('fDays').value);
+  if (start && days) {
+    const end = new Date(start);
+    end.setDate(end.getDate() + days);
+    document.getElementById('fEnd').value = end.toISOString().split('T')[0];
+  }
+}
+
+function previewPhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    photoBase64 = e.target.result;
+    document.getElementById('photoPreview').innerHTML = `<img src="${photoBase64}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>`;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function saveMember() {
+  const name = document.getElementById('fName').value.trim();
+  if (!name) { document.getElementById('memberErr').textContent = 'Name is required.'; return; }
+  const selectedPill = document.querySelector('.plan-pill.selected');
+  const data = {
+    name,
+    phone: document.getElementById('fPhone').value.trim(),
+    address: document.getElementById('fAddress').value.trim(),
+    fees_paid: parseFloat(document.getElementById('fFees').value)||0,
+    days: parseInt(document.getElementById('fDays').value)||0,
+    start_date: document.getElementById('fStart').value||null,
+    end_date: document.getElementById('fEnd').value||null,
+    is_draft: document.getElementById('fDraft').checked,
+    plan_name: selectedPill ? selectedPill.textContent : 'Custom',
+    photo_url: photoBase64||null
+  };
+  try {
+    const id = document.getElementById('editId').value;
+    if (id) {
+      await api(`members?id=eq.${id}`, 'PATCH', data);
+    } else {
+      await api('members', 'POST', data);
+    }
+    closeMemberSheet();
+    await loadMembers();
+    renderMembersList();
+    renderDashboard();
+    toast(id ? 'Member updated!' : 'Member added!');
+  } catch(e) { document.getElementById('memberErr').textContent = 'Error: ' + e.message; }
+}
+
+async function deleteMember(id) {
+  if (!confirm('Delete this member? This cannot be undone.')) return;
+  try {
+    await api(`members?id=eq.${id}`, 'DELETE');
+    showScreen('screenMembers');
+    await loadMembers();
+    renderMembersList();
+    renderDashboard();
+    toast('Member deleted');
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+function closeMemberSheet() { document.getElementById('memberSheet').classList.remove('open'); }
+
+// ── NOTES ─────────────────────────────────────────────────────────────────────
+function openNoteSheet(id) {
+  document.getElementById('noteTargetId').value = id;
+  document.getElementById('noteText').value = '';
+  document.getElementById('noteSheet').classList.add('open');
+}
+function closeNoteSheet() { document.getElementById('noteSheet').classList.remove('open'); }
+
+async function saveNote() {
+  const id = document.getElementById('noteTargetId').value;
+  const text = document.getElementById('noteText').value.trim();
+  if (!text) return;
+  const m = allMembers.find(x=>x.id===id);
+  if (!m) return;
+  const notes = [...(m.notes||[]), text];
+  const noteDates = [...(m.note_dates||[]), new Date().toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'})];
+  try {
+    await api(`members?id=eq.${id}`, 'PATCH', {notes, note_dates: noteDates});
+    closeNoteSheet();
+    await loadMembers();
+    showDetail(id);
+    toast('Note saved!');
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+// ── NAV ───────────────────────────────────────────────────────────────────────
+function showScreen(screenId, navBtn) {
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(screenId).classList.add('active');
+  if (navBtn) {
+    document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+    navBtn.classList.add('active');
+  }
+  const fab = document.querySelector('.fab');
+  fab.style.display = (screenId === 'screenMembers' || screenId === 'screenDashboard') ? 'flex' : 'none';
+}
+
+// ── TOAST ─────────────────────────────────────────────────────────────────────
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2500);
+}
+
+// ── BOOT ──────────────────────────────────────────────────────────────────────
+window.onload = async () => {
+  getConfig();
+  if (sessionStorage.getItem('kg_auth')) { await loadPlans(); await loadMembers(); showMain(); }
+  else { init(); }
+};
+</script>
+</body>
+</html>
