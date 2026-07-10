@@ -71,6 +71,7 @@
   .badge-expired { background: rgba(255,92,92,0.15); color: var(--danger); }
   .badge-soon { background: rgba(255,170,0,0.15); color: var(--warning); }
   .badge-draft { background: rgba(138,122,122,0.15); color: var(--text2); }
+  .badge-archived { background: rgba(138,122,122,0.25); color: var(--text3); }
   .meta-row { display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
   .meta-item { font-size: 12px; color: var(--text2); }
   .meta-item span { color: var(--text); font-weight: 500; }
@@ -135,7 +136,8 @@
   .filter-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
 
   .empty { text-align: center; padding: 60px 20px; color: var(--text3); font-size: 15px; }
-  .row-btns { display: flex; gap: 8px; margin-top: 14px; }
+  .row-btns { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .row-btns .btn { flex: 1 1 auto; }
   .divider { height: 1px; background: var(--border); margin: 12px 0; }
   .back-btn { display: flex; align-items: center; gap: 6px; color: var(--text2); font-size: 14px; cursor: pointer; margin-bottom: 16px; background: none; border: none; }
   .days-badge { font-size: 12px; color: var(--text2); margin-top: 6px; }
@@ -173,6 +175,11 @@
     4. Copy your <code>Project URL</code> and <code>anon public</code> key below<br>
     5. Go to <code>SQL Editor</code> and run the SQL shown below
   </div>
+  <div class="config-box" style="font-size:12px; border:1px solid var(--accent);">
+    <strong style="color:var(--accent);">Already have a project running?</strong><br>
+    Just run this one line in your existing Supabase SQL Editor, then reload the app — no need to redo setup:
+    <pre style="margin-top:8px; background:var(--bg); padding:10px; border-radius:6px; overflow-x:auto; font-size:11px; color:var(--text); white-space:pre-wrap;">alter table members add column if not exists is_archived boolean default false;</pre>
+  </div>
   <div class="config-box" style="font-size:12px;">
     <strong style="color:var(--text);">Run this SQL in Supabase SQL Editor:</strong>
     <pre style="margin-top:8px; background:var(--bg); padding:10px; border-radius:6px; overflow-x:auto; font-size:11px; color:var(--text); white-space:pre-wrap;">
@@ -188,6 +195,7 @@ create table members (
   start_date date,
   end_date date,
   is_draft boolean default false,
+  is_archived boolean default false,
   notes text[],
   note_dates text[],
   created_at timestamptz default now()
@@ -266,6 +274,10 @@ insert into settings(id, password, plans) values(
             <div class="stat-label">Expired</div>
             <div class="stat-value danger" id="statExpired">-</div>
           </div>
+          <div class="stat-card" style="grid-column: span 2;">
+            <div class="stat-label">Archived</div>
+            <div class="stat-value" id="statArchived" style="color:var(--text2);">-</div>
+          </div>
         </div>
         <div class="sec-header">
           <div class="sec-title">Expiring in 7 days</div>
@@ -285,6 +297,7 @@ insert into settings(id, password, plans) values(
           <button class="filter-tab" onclick="setFilter('expiring',this)">Expiring Soon</button>
           <button class="filter-tab" onclick="setFilter('expired',this)">Expired</button>
           <button class="filter-tab" onclick="setFilter('draft',this)">Drafts</button>
+          <button class="filter-tab" onclick="setFilter('archived',this)">Archived</button>
         </div>
         <div id="membersList"></div>
       </div>
@@ -306,8 +319,11 @@ insert into settings(id, password, plans) values(
         <button class="btn" onclick="savePlans()">Save Plans</button>
         <div class="divider" style="margin:24px 0;"></div>
         <div class="sec-title" style="margin-bottom:14px;">Change Password</div>
+        <div class="field"><label>Old Password</label><input type="password" id="oldPass" placeholder="Enter current password"/></div>
         <div class="field"><label>New Password</label><input type="password" id="newPass" placeholder="Enter new password"/></div>
+        <div class="field"><label>Re-enter New Password</label><input type="password" id="confirmPass" placeholder="Re-enter new password"/></div>
         <button class="btn" onclick="changePassword()">Update Password</button>
+        <div class="err" id="passErr" style="margin-top:10px;"></div>
       </div>
 
     </div>
@@ -362,9 +378,13 @@ insert into settings(id, password, plans) values(
       <div class="field"><label>End Date</label><input type="date" id="fEnd"/></div>
     </div>
 
-    <div class="field" style="display:flex; align-items:center; gap:10px; margin-bottom:20px;">
+    <div class="field" style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
       <input type="checkbox" id="fDraft" style="width:18px; height:18px; accent-color:var(--accent);"/>
       <label for="fDraft" style="font-size:14px; color:var(--text); margin-bottom:0;">Save as Draft (incomplete form)</label>
+    </div>
+    <div class="field" style="display:flex; align-items:center; gap:10px; margin-bottom:20px;">
+      <input type="checkbox" id="fArchived" style="width:18px; height:18px; accent-color:var(--accent);"/>
+      <label for="fArchived" style="font-size:14px; color:var(--text); margin-bottom:0;">Archived (member left the gym, keep on record)</label>
     </div>
 
     <div style="display:flex; gap:10px;">
@@ -545,14 +565,26 @@ async function savePlans() {
 }
 
 async function changePassword() {
-  const pw = document.getElementById('newPass').value.trim();
-  if (!pw) { toast('Enter a password'); return; }
+  const oldPw = document.getElementById('oldPass').value;
+  const newPw = document.getElementById('newPass').value.trim();
+  const confirmPw = document.getElementById('confirmPass').value.trim();
+  const errEl = document.getElementById('passErr');
+  errEl.textContent = '';
+  if (!oldPw || !newPw || !confirmPw) { errEl.textContent = 'Fill in all three fields.'; return; }
+  if (newPw !== confirmPw) { errEl.textContent = 'New passwords do not match.'; return; }
+  if (newPw.length < 4) { errEl.textContent = 'New password must be at least 4 characters.'; return; }
   try {
-    await api('settings?id=eq.1', 'PATCH', {password: pw});
-    localStorage.setItem('kg_pw', pw);
+    // Verify old password against the source of truth (Supabase), not just the local cache.
+    const s = await api('settings?id=eq.1');
+    const stored = (s && s.length) ? s[0].password : (localStorage.getItem('kg_pw') || 'gym123');
+    if (oldPw !== stored) { errEl.textContent = 'Old password is incorrect.'; return; }
+    await api('settings?id=eq.1', 'PATCH', {password: newPw});
+    localStorage.setItem('kg_pw', newPw);
+    document.getElementById('oldPass').value = '';
     document.getElementById('newPass').value = '';
+    document.getElementById('confirmPass').value = '';
     toast('Password updated!');
-  } catch(e) { toast('Error: ' + e.message); }
+  } catch(e) { errEl.textContent = 'Error: ' + e.message; }
 }
 
 // ── MEMBERS ───────────────────────────────────────────────────────────────────
@@ -563,6 +595,7 @@ async function loadMembers() {
 }
 
 function memberStatus(m) {
+  if (m.is_archived) return 'archived';
   if (m.is_draft) return 'draft';
   if (!m.end_date) return 'active';
   const days = Math.ceil((new Date(m.end_date) - new Date()) / 86400000);
@@ -573,8 +606,8 @@ function memberStatus(m) {
 
 function statusBadge(m) {
   const s = memberStatus(m);
-  const labels = {active:'Active', expired:'Expired', expiring:'Expiring Soon', draft:'Draft'};
-  const classes = {active:'badge-active', expired:'badge-expired', expiring:'badge-soon', draft:'badge-draft'};
+  const labels = {active:'Active', expired:'Expired', expiring:'Expiring Soon', draft:'Draft', archived:'Archived'};
+  const classes = {active:'badge-active', expired:'badge-expired', expiring:'badge-soon', draft:'badge-draft', archived:'badge-archived'};
   return `<span class="badge ${classes[s]}">${labels[s]}</span>`;
 }
 
@@ -624,11 +657,12 @@ function renderMembersList() {
 }
 
 function renderDashboard() {
-  const real = allMembers.filter(m => !m.is_draft);
+  const real = allMembers.filter(m => !m.is_draft && !m.is_archived);
   document.getElementById('statTotal').textContent = real.length;
   document.getElementById('statActive').textContent = real.filter(m=>memberStatus(m)==='active').length;
   document.getElementById('statSoon').textContent = real.filter(m=>memberStatus(m)==='expiring').length;
   document.getElementById('statExpired').textContent = real.filter(m=>memberStatus(m)==='expired').length;
+  document.getElementById('statArchived').textContent = allMembers.filter(m=>m.is_archived).length;
   const soon = real.filter(m=>memberStatus(m)==='expiring');
   const el = document.getElementById('expiringSoonList');
   if (!soon.length) { el.innerHTML = '<div class="empty" style="padding:20px;">All clear!</div>'; return; }
@@ -681,7 +715,10 @@ function showDetail(id) {
     </div>
     <div class="row-btns">
       <button class="btn btn-outline btn-sm" onclick="openEditMember('${id}')">✏️ Edit</button>
-      <button class="btn btn-sm" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);" onclick="openNoteSheet('${id}')">+ Add Note</button>
+      <button class="btn btn-sm" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);" onclick="openNoteSheet('${id}')">+ Note</button>
+      ${m.is_archived
+        ? `<button class="btn btn-sm" style="background:var(--success);color:#0d0d0d;" onclick="reactivateMember('${id}')">↩ Reactivate & Renew</button>`
+        : `<button class="btn btn-sm" style="background:var(--surface2);color:var(--warning);border:1px solid var(--border);" onclick="archiveMember('${id}')">📦 Archive</button>`}
       <button class="btn btn-danger btn-sm" onclick="deleteMember('${id}')">Delete</button>
     </div>
     <div class="divider"></div>
@@ -706,6 +743,7 @@ function openAddMember() {
   document.getElementById('fFees').value = '';
   document.getElementById('fDays').value = '';
   document.getElementById('fDraft').checked = false;
+  document.getElementById('fArchived').checked = false;
   photoBase64 = null;
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('fStart').value = today;
@@ -729,6 +767,7 @@ function openEditMember(id) {
   document.getElementById('fStart').value = m.start_date||'';
   document.getElementById('fEnd').value = m.end_date||'';
   document.getElementById('fDraft').checked = m.is_draft||false;
+  document.getElementById('fArchived').checked = m.is_archived||false;
   document.getElementById('memberErr').textContent = '';
   photoBase64 = m.photo_url || null;
   if (m.photo_url) document.getElementById('photoPreview').innerHTML = `<img src="${m.photo_url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>`;
@@ -784,6 +823,7 @@ async function saveMember() {
     start_date: document.getElementById('fStart').value||null,
     end_date: document.getElementById('fEnd').value||null,
     is_draft: document.getElementById('fDraft').checked,
+    is_archived: document.getElementById('fArchived').checked,
     plan_name: selectedPill ? selectedPill.textContent : 'Custom',
     photo_url: photoBase64||null
   };
@@ -815,6 +855,28 @@ async function deleteMember(id) {
 }
 
 function closeMemberSheet() { document.getElementById('memberSheet').classList.remove('open'); }
+
+// ── ARCHIVE ───────────────────────────────────────────────────────────────────
+async function archiveMember(id) {
+  if (!confirm('Move this member to Archive? They will drop out of the Active/Expired counts but stay on record.')) return;
+  try {
+    await api(`members?id=eq.${id}`, 'PATCH', {is_archived: true});
+    await loadMembers();
+    showDetail(id);
+    renderDashboard();
+    toast('Member archived');
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+async function reactivateMember(id) {
+  try {
+    await api(`members?id=eq.${id}`, 'PATCH', {is_archived: false});
+    await loadMembers();
+    renderDashboard();
+    toast('Reactivated — set their new plan & dates');
+    openEditMember(id);
+  } catch(e) { toast('Error: ' + e.message); }
+}
 
 // ── NOTES ─────────────────────────────────────────────────────────────────────
 function openNoteSheet(id) {
