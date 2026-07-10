@@ -177,8 +177,9 @@
   </div>
   <div class="config-box" style="font-size:12px; border:1px solid var(--accent);">
     <strong style="color:var(--accent);">Already have a project running?</strong><br>
-    Just run this one line in your existing Supabase SQL Editor, then reload the app — no need to redo setup:
-    <pre style="margin-top:8px; background:var(--bg); padding:10px; border-radius:6px; overflow-x:auto; font-size:11px; color:var(--text); white-space:pre-wrap;">alter table members add column if not exists is_archived boolean default false;</pre>
+    Just run these lines in your existing Supabase SQL Editor, then reload the app — no need to redo setup:
+    <pre style="margin-top:8px; background:var(--bg); padding:10px; border-radius:6px; overflow-x:auto; font-size:11px; color:var(--text); white-space:pre-wrap;">alter table members add column if not exists is_archived boolean default false;
+alter table settings add column if not exists gym_photo text;</pre>
   </div>
   <div class="config-box" style="font-size:12px;">
     <strong style="color:var(--text);">Run this SQL in Supabase SQL Editor:</strong>
@@ -206,7 +207,8 @@ create policy "allow all" on members for all using (true);
 create table settings (
   id int primary key default 1,
   password text,
-  plans jsonb
+  plans jsonb,
+  gym_photo text
 );
 insert into settings(id, password, plans) values(
   1,
@@ -230,6 +232,7 @@ insert into settings(id, password, plans) values(
 <!-- ============ LOGIN SCREEN ============ -->
 <div id="loginScreen" style="display:none;">
   <div class="login-wrap">
+    <img id="gymPhoto" src="" alt="Gym" style="width:100px;height:100px;border-radius:50%;object-fit:cover;border:2px solid var(--accent);margin-bottom:18px;display:none;"/>
     <div class="login-logo">KRATOS</div>
     <div class="login-tagline">Gym Management</div>
     <div class="login-box">
@@ -313,6 +316,20 @@ insert into settings(id, password, plans) values(
 
       <!-- SETTINGS SCREEN -->
       <div id="screenSettings" class="screen">
+        <div class="sec-title" style="margin-bottom:14px;">Gym Photo (shown on login page)</div>
+        <div style="text-align:center;">
+          <div class="photo-upload" id="gymPhotoPreview" style="width:96px;height:96px;margin-bottom:10px;">
+            <span class="photo-upload-label">🏋️</span>
+          </div>
+          <input type="file" id="gymPhotoInputCamera" accept="image/*" capture="environment" style="display:none" onchange="previewGymPhoto(this)"/>
+          <input type="file" id="gymPhotoInputGallery" accept="image/*" style="display:none" onchange="previewGymPhoto(this)"/>
+          <div style="display:flex; gap:8px; justify-content:center; margin-bottom:14px;">
+            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('gymPhotoInputCamera').click()">📸 Camera</button>
+            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('gymPhotoInputGallery').click()">🖼️ Gallery</button>
+          </div>
+        </div>
+        <button class="btn" onclick="saveGymPhoto()" style="margin-bottom:24px;">Save Gym Photo</button>
+        <div class="divider" style="margin-bottom:24px;"></div>
         <div class="sec-title" style="margin-bottom:14px;">Membership Plans</div>
         <div id="plansList"></div>
         <button class="btn btn-outline" onclick="addPlanRow()" style="margin-top:8px; margin-bottom:20px;">+ Add Plan</button>
@@ -366,7 +383,7 @@ insert into settings(id, password, plans) values(
     </div>
 
     <div class="field"><label>Full Name *</label><input type="text" id="fName" placeholder="Member name"/></div>
-    <div class="field"><label>Mobile Number *</label><input type="tel" id="fPhone" placeholder="10-digit number"/></div>
+    <div class="field"><label>Mobile Number *</label><input type="tel" id="fPhone" placeholder="10-digit number" inputmode="numeric" pattern="[0-9]*" maxlength="10" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"/></div>
     <div class="field"><label>Address (optional)</label><textarea id="fAddress" placeholder="Full address"></textarea></div>
 
     <div class="field">
@@ -408,6 +425,32 @@ insert into settings(id, password, plans) values(
       <button class="btn btn-outline" style="flex:1" onclick="closeNoteSheet()">Cancel</button>
       <button class="btn" style="flex:2" onclick="saveNote()">Save Note</button>
     </div>
+  </div>
+</div>
+
+<!-- EXTEND MEMBERSHIP SHEET -->
+<div class="overlay" id="extendSheet">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">Extend Membership</div>
+    <input type="hidden" id="extendTargetId"/>
+    <div id="extendCurrentInfo" style="font-size:13px; color:var(--text2); margin-bottom:16px;"></div>
+    <div class="field">
+      <label>Select New Plan</label>
+      <div class="plan-pills" id="extendPlanPills"></div>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      <div class="field"><label>Days to Add</label><input type="number" id="extendDays" placeholder="30" oninput="previewExtend()"/></div>
+      <div class="field"><label>Fees for Renewal (₹)</label><input type="number" id="extendFees" placeholder="0"/></div>
+    </div>
+    <div class="card" style="margin-top:4px;">
+      <div class="info-row" style="border:none;"><span class="info-label">New End Date</span><span class="info-val" id="extendPreview" style="color:var(--accent); font-weight:700;">—</span></div>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:16px;">
+      <button class="btn btn-outline" style="flex:1" onclick="closeExtendSheet()">Cancel</button>
+      <button class="btn" style="flex:2" onclick="confirmExtend()">Confirm Extend</button>
+    </div>
+    <div class="err" id="extendErr" style="margin-top:10px;"></div>
   </div>
 </div>
 
@@ -493,6 +536,7 @@ async function init() {
     if (!s || !s.length) throw new Error('no settings');
     localStorage.setItem('kg_plans', JSON.stringify(s[0].plans));
     localStorage.setItem('kg_pw', s[0].password);
+    if (s[0].gym_photo) localStorage.setItem('kg_gym_photo', s[0].gym_photo);
     showLogin();
   } catch(e) {
     if (localStorage.getItem('kg_pw')) { showLogin(); }
@@ -509,6 +553,13 @@ function showLogin() {
   document.getElementById('setupScreen').style.display = 'none';
   document.getElementById('loginScreen').style.display = 'block';
   document.getElementById('mainApp').style.display = 'none';
+  applyGymPhotoToLogin();
+}
+function applyGymPhotoToLogin() {
+  const photo = localStorage.getItem('kg_gym_photo');
+  const img = document.getElementById('gymPhoto');
+  if (photo) { img.src = photo; img.style.display = 'block'; }
+  else { img.style.display = 'none'; }
 }
 async function showMain() {
   document.getElementById('loginScreen').style.display = 'none';
@@ -518,6 +569,11 @@ async function showMain() {
   renderDashboard();
   renderMembersList();
   renderPlansSettings();
+  const existingPhoto = localStorage.getItem('kg_gym_photo');
+  if (existingPhoto) {
+    gymPhotoBase64 = existingPhoto;
+    document.getElementById('gymPhotoPreview').innerHTML = `<img src="${existingPhoto}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>`;
+  }
 }
 
 // ── AUTH ─────────────────────────────────────────────────────────────────────
@@ -537,9 +593,35 @@ function doLogout() { sessionStorage.removeItem('kg_auth'); showLogin(); documen
 async function loadPlans() {
   try {
     const s = await api('settings?id=eq.1');
-    if (s && s.length) { plans = s[0].plans; localStorage.setItem('kg_plans', JSON.stringify(plans)); }
+    if (s && s.length) {
+      plans = s[0].plans;
+      localStorage.setItem('kg_plans', JSON.stringify(plans));
+      if (s[0].gym_photo) localStorage.setItem('kg_gym_photo', s[0].gym_photo);
+    }
     else { plans = JSON.parse(localStorage.getItem('kg_plans') || '[]'); }
   } catch(e) { plans = JSON.parse(localStorage.getItem('kg_plans') || '[]'); }
+}
+
+let gymPhotoBase64 = null;
+
+function previewGymPhoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    gymPhotoBase64 = e.target.result;
+    document.getElementById('gymPhotoPreview').innerHTML = `<img src="${gymPhotoBase64}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>`;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function saveGymPhoto() {
+  if (!gymPhotoBase64) { toast('Pick a photo first'); return; }
+  try {
+    await api('settings?id=eq.1', 'PATCH', {gym_photo: gymPhotoBase64});
+    localStorage.setItem('kg_gym_photo', gymPhotoBase64);
+    toast('Gym photo updated!');
+  } catch(e) { toast('Error: ' + e.message); }
 }
 
 function renderPlansSettings() {
@@ -715,6 +797,9 @@ function showDetail(id) {
       <div class="info-row"><span class="info-label">Start Date</span><span class="info-val">${m.start_date||'—'}</span></div>
       <div class="info-row" style="border:none;"><span class="info-label">End Date</span><span class="info-val">${m.end_date||'—'} ${daysLeft(m)}</span></div>
     </div>
+    ${(!m.is_draft && !m.is_archived) ? `
+    <button class="btn" style="background:var(--accent); margin-top:14px;" onclick="openExtendSheet('${id}')">🔄 Extend Membership</button>
+    ` : ''}
     <div class="row-btns">
       <button class="btn btn-outline btn-sm" onclick="openEditMember('${id}')">✏️ Edit</button>
       <button class="btn btn-sm" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);" onclick="openNoteSheet('${id}')">+ Note</button>
@@ -814,6 +899,7 @@ async function saveMember() {
   const name = document.getElementById('fName').value.trim();
   if (!name) { document.getElementById('memberErr').textContent = 'Name is required.'; return; }
   const phone = document.getElementById('fPhone').value.trim();
+  if (phone && !/^[0-9]+$/.test(phone)) { document.getElementById('memberErr').textContent = 'Mobile number must contain digits only.'; return; }
   const isArchived = document.getElementById('fArchived').checked;
 
   // Auto-draft: mobile number and photo are required for a "complete" profile.
@@ -886,6 +972,87 @@ async function reactivateMember(id) {
     toast('Reactivated — set their new plan & dates');
     openEditMember(id);
   } catch(e) { toast('Error: ' + e.message); }
+}
+
+// ── EXTEND MEMBERSHIP ──────────────────────────────────────────────────────────
+// Rule: new_end_date = current_end_date + plan_days.
+// This one formula naturally handles both cases:
+//  - Still active with days left (e.g. 2 days remaining): those 2 days
+//    carry forward on top of the new plan.
+//  - Already overdue (e.g. 3 days overdue): since current_end_date is
+//    3 days in the past, adding plan_days lands exactly plan_days - 3
+//    days from today — the overdue days are automatically deducted.
+function openExtendSheet(id) {
+  const m = allMembers.find(x=>x.id===id);
+  if (!m) return;
+  document.getElementById('extendTargetId').value = id;
+  const info = document.getElementById('extendCurrentInfo');
+  info.innerHTML = `Current end date: <strong style="color:var(--text);">${m.end_date || '—'}</strong>${m.end_date ? ' · ' + daysLeft(m) : ''}`;
+  document.querySelectorAll('#extendPlanPills .plan-pill').forEach(b=>b.classList.remove('selected'));
+  renderExtendPlanPills();
+  document.getElementById('extendDays').value = '';
+  document.getElementById('extendFees').value = '';
+  document.getElementById('extendPreview').textContent = '—';
+  document.getElementById('extendErr').textContent = '';
+  document.getElementById('extendSheet').classList.add('open');
+}
+function closeExtendSheet() { document.getElementById('extendSheet').classList.remove('open'); }
+
+function renderExtendPlanPills() {
+  const el = document.getElementById('extendPlanPills');
+  el.innerHTML = plans.map(p=>`<button class="plan-pill" onclick="selectExtendPlan(this,${p.days},${p.fees})">${p.name}</button>`).join('');
+}
+
+function selectExtendPlan(btn, days, fees) {
+  document.querySelectorAll('#extendPlanPills .plan-pill').forEach(b=>b.classList.remove('selected'));
+  btn.classList.add('selected');
+  document.getElementById('extendDays').value = days;
+  document.getElementById('extendFees').value = fees;
+  previewExtend();
+}
+
+function previewExtend() {
+  const id = document.getElementById('extendTargetId').value;
+  const m = allMembers.find(x=>x.id===id);
+  const days = parseInt(document.getElementById('extendDays').value);
+  const el = document.getElementById('extendPreview');
+  if (!m || !days) { el.textContent = '—'; return; }
+  const base = m.end_date ? new Date(m.end_date) : new Date();
+  const newEnd = new Date(base);
+  newEnd.setDate(newEnd.getDate() + days);
+  el.textContent = newEnd.toISOString().split('T')[0];
+}
+
+async function confirmExtend() {
+  const id = document.getElementById('extendTargetId').value;
+  const m = allMembers.find(x=>x.id===id);
+  const errEl = document.getElementById('extendErr');
+  if (!m) return;
+  const days = parseInt(document.getElementById('extendDays').value);
+  if (!days) { errEl.textContent = 'Select a plan or enter days to add.'; return; }
+  const fees = parseFloat(document.getElementById('extendFees').value) || 0;
+  const selectedPill = document.querySelector('#extendPlanPills .plan-pill.selected');
+  const base = m.end_date ? new Date(m.end_date) : new Date();
+  const newEnd = new Date(base);
+  newEnd.setDate(newEnd.getDate() + days);
+  const newEndStr = newEnd.toISOString().split('T')[0];
+  const noteDate = new Date().toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
+  const noteText = `Extended membership +${days} days${selectedPill ? ' (' + selectedPill.textContent + ')' : ''}${fees ? ', ₹' + fees + ' paid' : ''}. New end date: ${newEndStr}.`;
+  const notes = [...(m.notes||[]), noteText];
+  const noteDates = [...(m.note_dates||[]), noteDate];
+  try {
+    await api(`members?id=eq.${id}`, 'PATCH', {
+      end_date: newEndStr,
+      fees_paid: (m.fees_paid||0) + fees,
+      plan_name: selectedPill ? selectedPill.textContent : m.plan_name,
+      notes, note_dates: noteDates
+    });
+    closeExtendSheet();
+    await loadMembers();
+    showDetail(id);
+    renderDashboard();
+    toast('Membership extended!');
+  } catch(e) { errEl.textContent = 'Error: ' + e.message; }
 }
 
 // ── NOTES ─────────────────────────────────────────────────────────────────────
