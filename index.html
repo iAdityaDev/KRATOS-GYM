@@ -335,6 +335,10 @@ create policy "Anon can delete" on storage.objects for delete using (bucket_id =
         <button class="btn btn-outline" onclick="addPlanRow()" style="margin-top:8px; margin-bottom:20px;">+ Add Plan</button>
         <button class="btn" onclick="savePlans()">Save Plans</button>
         <div class="divider" style="margin:24px 0;"></div>
+        <div class="sec-title" style="margin-bottom:14px;">Backup & Export</div>
+        <div style="font-size:12px; color:var(--text2); margin-bottom:12px; line-height:1.5;">Download all member data as a CSV file — opens directly in Excel, Google Sheets, or Numbers. Good for a quick manual backup.</div>
+        <button class="btn btn-outline" onclick="exportMembersCSV()" style="margin-bottom:24px;">⬇️ Export All Members (CSV)</button>
+        <div class="divider" style="margin-bottom:24px;"></div>
         <div class="sec-title" style="margin-bottom:14px;">Change Password</div>
         <div class="field"><label>Old Password</label><input type="password" id="oldPass" placeholder="Enter current password"/></div>
         <div class="field"><label>New Password</label><input type="password" id="newPass" placeholder="Enter new password"/></div>
@@ -397,7 +401,7 @@ create policy "Anon can delete" on storage.objects for delete using (bucket_id =
     </div>
 
     <div class="field"><label>Full Name *</label><input type="text" id="fName" placeholder="Member name"/></div>
-    <div class="field"><label>Mobile Number *</label><input type="tel" id="fPhone" placeholder="10-digit number" inputmode="numeric" pattern="[0-9]*" maxlength="10" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"/></div>
+    <div class="field"><label>Mobile Number * (exactly 10 digits)</label><input type="tel" id="fPhone" placeholder="10-digit number" inputmode="numeric" pattern="[0-9]*" maxlength="10" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"/></div>
     <div class="field"><label>Address (optional)</label><textarea id="fAddress" placeholder="Full address"></textarea></div>
 
     <div class="field">
@@ -478,6 +482,23 @@ let currentFilter = 'all';
 let currentSearch = '';
 let photoBase64 = null;
 let pendingPhotoFile = null;
+
+// Displays every date as dd/mm/yyyy while the underlying value stays yyyy-mm-dd
+// (required by Supabase's date columns and the native <input type="date">).
+function formatDateDMY(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  if (isNaN(d)) return dateStr;
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
+}
+function todayDMY() {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
+}
 
 function getConfig() {
   SUPABASE_URL = localStorage.getItem('kg_url') || '';
@@ -685,6 +706,44 @@ function renderPlansSettings() {
 
 function addPlanRow() { plans.push({name:'', days:30, fees:0}); renderPlansSettings(); }
 
+function csvEscape(v) {
+  if (v === null || v === undefined) return '';
+  const s = String(v).replace(/"/g,'""');
+  return /[",\n]/.test(s) ? `"${s}"` : s;
+}
+
+async function exportMembersCSV() {
+  toast('Preparing export...');
+  try {
+    const data = await api('members?order=created_at.desc');
+    const statusLabels = {active:'Active', expired:'Expired', expiring:'Expiring Soon', draft:'Draft', archived:'Archived'};
+    const headers = ['Name','Phone','Address','Plan','Fees Paid','Days','Start Date','End Date','Status','Notes'];
+    const rows = data.map(m => [
+      m.name||'',
+      m.phone||'',
+      m.address||'',
+      m.plan_name||'',
+      m.fees_paid||0,
+      m.days||'',
+      formatDateDMY(m.start_date),
+      formatDateDMY(m.end_date),
+      statusLabels[memberStatus(m)],
+      (m.notes||[]).join(' | ')
+    ]);
+    const csv = [headers, ...rows].map(r=>r.map(csvEscape).join(',')).join('\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `kratos_gym_members_${todayDMY().replace(/\//g,'-')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('Export downloaded!');
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
 async function savePlans() {
   try {
     await api('settings?id=eq.1', 'PATCH', {plans});
@@ -781,7 +840,7 @@ function renderMembersList() {
         <div class="meta-item">Plan: <span>${m.plan_name||'Custom'}</span></div>
         <div class="meta-item">Fees: <span>₹${m.fees_paid||0}</span></div>
       </div>
-      <div class="days-badge">${m.end_date ? 'Expires: ' + m.end_date + ' · ' : ''}${daysLeft(m)}</div>
+      <div class="days-badge">${m.end_date ? 'Expires: ' + formatDateDMY(m.end_date) + ' · ' : ''}${daysLeft(m)}</div>
     </div>
   `).join('');
 }
@@ -840,8 +899,8 @@ function showDetail(id) {
       <div class="info-row"><span class="info-label">Plan</span><span class="info-val">${m.plan_name||'Custom'}</span></div>
       <div class="info-row"><span class="info-label">Fees Paid</span><span class="info-val">₹${m.fees_paid||0}</span></div>
       <div class="info-row"><span class="info-label">Days</span><span class="info-val">${m.days||'—'}</span></div>
-      <div class="info-row"><span class="info-label">Start Date</span><span class="info-val">${m.start_date||'—'}</span></div>
-      <div class="info-row" style="border:none;"><span class="info-label">End Date</span><span class="info-val">${m.end_date||'—'} ${daysLeft(m)}</span></div>
+      <div class="info-row"><span class="info-label">Start Date</span><span class="info-val">${m.start_date ? formatDateDMY(m.start_date) : '—'}</span></div>
+      <div class="info-row" style="border:none;"><span class="info-label">End Date</span><span class="info-val">${m.end_date ? formatDateDMY(m.end_date) : '—'} ${daysLeft(m)}</span></div>
     </div>
     ${(!m.is_draft && !m.is_archived) ? `
     <button class="btn" style="background:var(--accent); margin-top:14px;" onclick="openExtendSheet('${id}')">🔄 Extend Membership</button>
@@ -949,6 +1008,7 @@ async function saveMember() {
   if (!name) { document.getElementById('memberErr').textContent = 'Name is required.'; return; }
   const phone = document.getElementById('fPhone').value.trim();
   if (phone && !/^[0-9]+$/.test(phone)) { document.getElementById('memberErr').textContent = 'Mobile number must contain digits only.'; return; }
+  if (phone && phone.length !== 10) { document.getElementById('memberErr').textContent = 'Mobile number must be exactly 10 digits.'; return; }
   const isArchived = document.getElementById('fArchived').checked;
 
   // Auto-draft: mobile number and photo are required for a "complete" profile.
@@ -1053,7 +1113,7 @@ function openExtendSheet(id) {
   if (!m) return;
   document.getElementById('extendTargetId').value = id;
   const info = document.getElementById('extendCurrentInfo');
-  info.innerHTML = `Current end date: <strong style="color:var(--text);">${m.end_date || '—'}</strong>${m.end_date ? ' · ' + daysLeft(m) : ''}`;
+  info.innerHTML = `Current end date: <strong style="color:var(--text);">${m.end_date ? formatDateDMY(m.end_date) : '—'}</strong>${m.end_date ? ' · ' + daysLeft(m) : ''}`;
   document.querySelectorAll('#extendPlanPills .plan-pill').forEach(b=>b.classList.remove('selected'));
   renderExtendPlanPills();
   document.getElementById('extendDays').value = '';
@@ -1086,7 +1146,7 @@ function previewExtend() {
   const base = m.end_date ? new Date(m.end_date) : new Date();
   const newEnd = new Date(base);
   newEnd.setDate(newEnd.getDate() + days);
-  el.textContent = newEnd.toISOString().split('T')[0];
+  el.textContent = formatDateDMY(newEnd.toISOString().split('T')[0]);
 }
 
 async function confirmExtend() {
@@ -1102,8 +1162,8 @@ async function confirmExtend() {
   const newEnd = new Date(base);
   newEnd.setDate(newEnd.getDate() + days);
   const newEndStr = newEnd.toISOString().split('T')[0];
-  const noteDate = new Date().toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
-  const noteText = `Extended membership +${days} days${selectedPill ? ' (' + selectedPill.textContent + ')' : ''}${fees ? ', ₹' + fees + ' paid' : ''}. New end date: ${newEndStr}.`;
+  const noteDate = todayDMY();
+  const noteText = `Extended membership +${days} days${selectedPill ? ' (' + selectedPill.textContent + ')' : ''}${fees ? ', ₹' + fees + ' paid' : ''}. New end date: ${formatDateDMY(newEndStr)}.`;
   const notes = [...(m.notes||[]), noteText];
   const noteDates = [...(m.note_dates||[]), noteDate];
   try {
@@ -1136,7 +1196,7 @@ async function saveNote() {
   const m = allMembers.find(x=>x.id===id);
   if (!m) return;
   const notes = [...(m.notes||[]), text];
-  const noteDates = [...(m.note_dates||[]), new Date().toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'})];
+  const noteDates = [...(m.note_dates||[]), todayDMY()];
   try {
     await api(`members?id=eq.${id}`, 'PATCH', {notes, note_dates: noteDates});
     closeNoteSheet();
