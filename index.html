@@ -357,11 +357,16 @@ insert into settings(id, password, plans) values(
         <span class="photo-upload-label">📷</span>
       </div>
       <input type="file" id="photoInput" accept="image/*" style="display:none" onchange="previewPhoto(this)"/>
-      <div style="font-size:12px; color:var(--text3); margin-bottom:16px;">Tap to add photo (optional)</div>
+      <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none" onchange="previewPhoto(this)"/>
+      <div style="display:flex; gap:8px; justify-content:center; margin-bottom:6px;">
+        <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('cameraInput').click()">📸 Take Photo</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('photoInput').click()">🖼️ Gallery</button>
+      </div>
+      <div style="font-size:12px; color:var(--text3); margin-bottom:16px;">Photo required for a complete profile</div>
     </div>
 
     <div class="field"><label>Full Name *</label><input type="text" id="fName" placeholder="Member name"/></div>
-    <div class="field"><label>Mobile Number</label><input type="tel" id="fPhone" placeholder="10-digit number"/></div>
+    <div class="field"><label>Mobile Number *</label><input type="tel" id="fPhone" placeholder="10-digit number"/></div>
     <div class="field"><label>Address (optional)</label><textarea id="fAddress" placeholder="Full address"></textarea></div>
 
     <div class="field">
@@ -378,14 +383,11 @@ insert into settings(id, password, plans) values(
       <div class="field"><label>End Date</label><input type="date" id="fEnd"/></div>
     </div>
 
-    <div class="field" style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
-      <input type="checkbox" id="fDraft" style="width:18px; height:18px; accent-color:var(--accent);"/>
-      <label for="fDraft" style="font-size:14px; color:var(--text); margin-bottom:0;">Save as Draft (incomplete form)</label>
-    </div>
     <div class="field" style="display:flex; align-items:center; gap:10px; margin-bottom:20px;">
       <input type="checkbox" id="fArchived" style="width:18px; height:18px; accent-color:var(--accent);"/>
       <label for="fArchived" style="font-size:14px; color:var(--text); margin-bottom:0;">Archived (member left the gym, keep on record)</label>
     </div>
+    <div style="font-size:12px; color:var(--text3); margin-bottom:16px;">Note: if mobile number or photo is missing, this member is saved automatically as a Draft (unless marked Archived above).</div>
 
     <div style="display:flex; gap:10px;">
       <button class="btn btn-outline" style="flex:1" onclick="closeMemberSheet()">Cancel</button>
@@ -742,7 +744,6 @@ function openAddMember() {
   document.getElementById('fAddress').value = '';
   document.getElementById('fFees').value = '';
   document.getElementById('fDays').value = '';
-  document.getElementById('fDraft').checked = false;
   document.getElementById('fArchived').checked = false;
   photoBase64 = null;
   const today = new Date().toISOString().split('T')[0];
@@ -766,7 +767,6 @@ function openEditMember(id) {
   document.getElementById('fDays').value = m.days||'';
   document.getElementById('fStart').value = m.start_date||'';
   document.getElementById('fEnd').value = m.end_date||'';
-  document.getElementById('fDraft').checked = m.is_draft||false;
   document.getElementById('fArchived').checked = m.is_archived||false;
   document.getElementById('memberErr').textContent = '';
   photoBase64 = m.photo_url || null;
@@ -813,17 +813,26 @@ function previewPhoto(input) {
 async function saveMember() {
   const name = document.getElementById('fName').value.trim();
   if (!name) { document.getElementById('memberErr').textContent = 'Name is required.'; return; }
+  const phone = document.getElementById('fPhone').value.trim();
+  const isArchived = document.getElementById('fArchived').checked;
+
+  // Auto-draft: mobile number and photo are required for a "complete" profile.
+  // If either is missing, the member is saved as a Draft automatically —
+  // unless they're marked Archived, in which case completeness doesn't matter.
+  const isComplete = !!phone && !!photoBase64;
+  const isDraft = isArchived ? false : !isComplete;
+
   const selectedPill = document.querySelector('.plan-pill.selected');
   const data = {
     name,
-    phone: document.getElementById('fPhone').value.trim(),
+    phone,
     address: document.getElementById('fAddress').value.trim(),
     fees_paid: parseFloat(document.getElementById('fFees').value)||0,
     days: parseInt(document.getElementById('fDays').value)||0,
     start_date: document.getElementById('fStart').value||null,
     end_date: document.getElementById('fEnd').value||null,
-    is_draft: document.getElementById('fDraft').checked,
-    is_archived: document.getElementById('fArchived').checked,
+    is_draft: isDraft,
+    is_archived: isArchived,
     plan_name: selectedPill ? selectedPill.textContent : 'Custom',
     photo_url: photoBase64||null
   };
@@ -838,7 +847,8 @@ async function saveMember() {
     await loadMembers();
     renderMembersList();
     renderDashboard();
-    toast(id ? 'Member updated!' : 'Member added!');
+    if (isDraft) toast('Saved as Draft — missing mobile no. or photo');
+    else toast(id ? 'Member updated!' : 'Member added!');
   } catch(e) { document.getElementById('memberErr').textContent = 'Error: ' + e.message; }
 }
 
