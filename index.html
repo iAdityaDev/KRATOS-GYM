@@ -179,7 +179,13 @@
     <strong style="color:var(--accent);">Already have a project running?</strong><br>
     Just run these lines in your existing Supabase SQL Editor, then reload the app — no need to redo setup:
     <pre style="margin-top:8px; background:var(--bg); padding:10px; border-radius:6px; overflow-x:auto; font-size:11px; color:var(--text); white-space:pre-wrap;">alter table members add column if not exists is_archived boolean default false;
-alter table settings add column if not exists gym_photo text;</pre>
+alter table settings add column if not exists gym_photo text;
+insert into storage.buckets (id, name, public) values ('photos', 'photos', true)
+on conflict (id) do nothing;
+create policy "Public read access" on storage.objects for select using (bucket_id = 'photos');
+create policy "Anon can upload" on storage.objects for insert with check (bucket_id = 'photos');
+create policy "Anon can update" on storage.objects for update using (bucket_id = 'photos');
+create policy "Anon can delete" on storage.objects for delete using (bucket_id = 'photos');</pre>
   </div>
   <div class="config-box" style="font-size:12px;">
     <strong style="color:var(--text);">Run this SQL in Supabase SQL Editor:</strong>
@@ -215,6 +221,14 @@ insert into settings(id, password, plans) values(
   'gym123',
   '[{"name":"1 Month","days":30,"fees":500},{"name":"3 Months","days":90,"fees":1300},{"name":"6 Months","days":180,"fees":2400},{"name":"1 Year","days":365,"fees":4500}]'
 );
+
+-- Photo storage bucket (keeps photos out of the database rows)
+insert into storage.buckets (id, name, public) values ('photos', 'photos', true)
+on conflict (id) do nothing;
+create policy "Public read access" on storage.objects for select using (bucket_id = 'photos');
+create policy "Anon can upload" on storage.objects for insert with check (bucket_id = 'photos');
+create policy "Anon can update" on storage.objects for update using (bucket_id = 'photos');
+create policy "Anon can delete" on storage.objects for delete using (bucket_id = 'photos');
     </pre>
   </div>
   <div class="field">
@@ -316,6 +330,18 @@ insert into settings(id, password, plans) values(
 
       <!-- SETTINGS SCREEN -->
       <div id="screenSettings" class="screen">
+        <div class="sec-title" style="margin-bottom:14px;">Membership Plans</div>
+        <div id="plansList"></div>
+        <button class="btn btn-outline" onclick="addPlanRow()" style="margin-top:8px; margin-bottom:20px;">+ Add Plan</button>
+        <button class="btn" onclick="savePlans()">Save Plans</button>
+        <div class="divider" style="margin:24px 0;"></div>
+        <div class="sec-title" style="margin-bottom:14px;">Change Password</div>
+        <div class="field"><label>Old Password</label><input type="password" id="oldPass" placeholder="Enter current password"/></div>
+        <div class="field"><label>New Password</label><input type="password" id="newPass" placeholder="Enter new password"/></div>
+        <div class="field"><label>Re-enter New Password</label><input type="password" id="confirmPass" placeholder="Re-enter new password"/></div>
+        <button class="btn" onclick="changePassword()">Update Password</button>
+        <div class="err" id="passErr" style="margin-top:10px;"></div>
+        <div class="divider" style="margin:24px 0;"></div>
         <div class="sec-title" style="margin-bottom:14px;">Gym Photo (shown on login page)</div>
         <div style="text-align:center;">
           <div class="photo-upload" id="gymPhotoPreview" style="width:96px;height:96px;margin-bottom:10px;">
@@ -328,19 +354,7 @@ insert into settings(id, password, plans) values(
             <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('gymPhotoInputGallery').click()">🖼️ Gallery</button>
           </div>
         </div>
-        <button class="btn" onclick="saveGymPhoto()" style="margin-bottom:24px;">Save Gym Photo</button>
-        <div class="divider" style="margin-bottom:24px;"></div>
-        <div class="sec-title" style="margin-bottom:14px;">Membership Plans</div>
-        <div id="plansList"></div>
-        <button class="btn btn-outline" onclick="addPlanRow()" style="margin-top:8px; margin-bottom:20px;">+ Add Plan</button>
-        <button class="btn" onclick="savePlans()">Save Plans</button>
-        <div class="divider" style="margin:24px 0;"></div>
-        <div class="sec-title" style="margin-bottom:14px;">Change Password</div>
-        <div class="field"><label>Old Password</label><input type="password" id="oldPass" placeholder="Enter current password"/></div>
-        <div class="field"><label>New Password</label><input type="password" id="newPass" placeholder="Enter new password"/></div>
-        <div class="field"><label>Re-enter New Password</label><input type="password" id="confirmPass" placeholder="Re-enter new password"/></div>
-        <button class="btn" onclick="changePassword()">Update Password</button>
-        <div class="err" id="passErr" style="margin-top:10px;"></div>
+        <button class="btn" onclick="saveGymPhoto()">Save Gym Photo</button>
       </div>
 
     </div>
@@ -463,6 +477,7 @@ let allMembers = [];
 let currentFilter = 'all';
 let currentSearch = '';
 let photoBase64 = null;
+let pendingPhotoFile = null;
 
 function getConfig() {
   SUPABASE_URL = localStorage.getItem('kg_url') || '';
@@ -525,6 +540,28 @@ async function api(path, method='GET', body=null) {
   if (method === 'DELETE' || res.status === 204) return null;
   const text = await res.text();
   return text ? JSON.parse(text) : null;
+}
+
+// Uploads a raw File to Supabase Storage (bucket "photos") and returns its
+// public URL. Keeps large image data out of the database rows entirely.
+async function uploadToStorage(file, folder) {
+  const ext = (file.name && file.name.includes('.')) ? file.name.split('.').pop().toLowerCase() : 'jpg';
+  const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/photos/${path}`, {
+    method: 'POST',
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': 'Bearer ' + SUPABASE_KEY,
+      'Content-Type': file.type || 'image/jpeg'
+    },
+    body: file
+  });
+  if (!res.ok) {
+    let msg = 'Photo upload failed';
+    try { const e = await res.json(); msg = e.message || msg; } catch(_) {}
+    throw new Error(msg);
+  }
+  return `${SUPABASE_URL}/storage/v1/object/public/photos/${path}`;
 }
 
 // ── INIT ─────────────────────────────────────────────────────────────────────
@@ -603,10 +640,12 @@ async function loadPlans() {
 }
 
 let gymPhotoBase64 = null;
+let pendingGymPhotoFile = null;
 
 function previewGymPhoto(input) {
   const file = input.files[0];
   if (!file) return;
+  pendingGymPhotoFile = file;
   const reader = new FileReader();
   reader.onload = e => {
     gymPhotoBase64 = e.target.result;
@@ -616,10 +655,17 @@ function previewGymPhoto(input) {
 }
 
 async function saveGymPhoto() {
-  if (!gymPhotoBase64) { toast('Pick a photo first'); return; }
+  if (!pendingGymPhotoFile && !gymPhotoBase64) { toast('Pick a photo first'); return; }
   try {
-    await api('settings?id=eq.1', 'PATCH', {gym_photo: gymPhotoBase64});
-    localStorage.setItem('kg_gym_photo', gymPhotoBase64);
+    let url = gymPhotoBase64;
+    if (pendingGymPhotoFile) {
+      toast('Uploading...');
+      url = await uploadToStorage(pendingGymPhotoFile, 'gym');
+    }
+    await api('settings?id=eq.1', 'PATCH', {gym_photo: url});
+    localStorage.setItem('kg_gym_photo', url);
+    gymPhotoBase64 = url;
+    pendingGymPhotoFile = null;
     toast('Gym photo updated!');
   } catch(e) { toast('Error: ' + e.message); }
 }
@@ -831,6 +877,7 @@ function openAddMember() {
   document.getElementById('fDays').value = '';
   document.getElementById('fArchived').checked = false;
   photoBase64 = null;
+  pendingPhotoFile = null;
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('fStart').value = today;
   document.getElementById('fEnd').value = '';
@@ -855,6 +902,7 @@ function openEditMember(id) {
   document.getElementById('fArchived').checked = m.is_archived||false;
   document.getElementById('memberErr').textContent = '';
   photoBase64 = m.photo_url || null;
+  pendingPhotoFile = null;
   if (m.photo_url) document.getElementById('photoPreview').innerHTML = `<img src="${m.photo_url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>`;
   else document.getElementById('photoPreview').innerHTML = '<span class="photo-upload-label">📷</span>';
   renderPlanPills(m.plan_name);
@@ -887,6 +935,7 @@ function calcEndDate() {
 function previewPhoto(input) {
   const file = input.files[0];
   if (!file) return;
+  pendingPhotoFile = file;
   const reader = new FileReader();
   reader.onload = e => {
     photoBase64 = e.target.result;
@@ -905,8 +954,24 @@ async function saveMember() {
   // Auto-draft: mobile number and photo are required for a "complete" profile.
   // If either is missing, the member is saved as a Draft automatically —
   // unless they're marked Archived, in which case completeness doesn't matter.
-  const isComplete = !!phone && !!photoBase64;
+  const isComplete = !!phone && !!(pendingPhotoFile || photoBase64);
   const isDraft = isArchived ? false : !isComplete;
+
+  const errEl = document.getElementById('memberErr');
+  let photoUrl = photoBase64;
+  if (pendingPhotoFile) {
+    errEl.textContent = 'Uploading photo...';
+    errEl.style.color = 'var(--accent)';
+    try {
+      photoUrl = await uploadToStorage(pendingPhotoFile, 'members');
+    } catch(e) {
+      errEl.style.color = 'var(--danger)';
+      errEl.textContent = 'Photo upload failed: ' + e.message;
+      return;
+    }
+  }
+  errEl.textContent = '';
+  errEl.style.color = 'var(--danger)';
 
   const selectedPill = document.querySelector('.plan-pill.selected');
   const data = {
@@ -920,7 +985,7 @@ async function saveMember() {
     is_draft: isDraft,
     is_archived: isArchived,
     plan_name: selectedPill ? selectedPill.textContent : 'Custom',
-    photo_url: photoBase64||null
+    photo_url: photoUrl||null
   };
   try {
     const id = document.getElementById('editId').value;
@@ -929,13 +994,14 @@ async function saveMember() {
     } else {
       await api('members', 'POST', data);
     }
+    pendingPhotoFile = null;
     closeMemberSheet();
     await loadMembers();
     renderMembersList();
     renderDashboard();
     if (isDraft) toast('Saved as Draft — missing mobile no. or photo');
     else toast(id ? 'Member updated!' : 'Member added!');
-  } catch(e) { document.getElementById('memberErr').textContent = 'Error: ' + e.message; }
+  } catch(e) { errEl.textContent = 'Error: ' + e.message; }
 }
 
 async function deleteMember(id) {
