@@ -152,12 +152,25 @@
 
   .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--accent); color: var(--text); font-size: 14px; padding: 10px 20px; border-radius: var(--radius); z-index: 999; opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap; }
   .toast.show { opacity: 1; }
+
+  /* PHOTO VIEWER (WhatsApp-style full screen zoom) */
+  .photo-viewer { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 300; align-items: center; justify-content: center; cursor: zoom-out; animation: fadeIn 0.15s ease; }
+  .photo-viewer.open { display: flex; }
+  .photo-viewer img { max-width: 92vw; max-height: 82vh; object-fit: contain; border-radius: 6px; }
+  .photo-viewer-close { position: absolute; top: 18px; right: 18px; width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,0.12); border: none; color: #fff; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 </style>
 </head>
 <body>
 
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
+
+<!-- PHOTO VIEWER (tap a member photo to open, tap anywhere to close) -->
+<div class="photo-viewer" id="photoViewer" onclick="closePhotoViewer()">
+  <button class="photo-viewer-close" onclick="closePhotoViewer(event)">✕</button>
+  <img id="photoViewerImg" src="" alt="Photo" onclick="event.stopPropagation()"/>
+</div>
 
 <!-- ============ SETUP SCREEN ============ -->
 <div id="setupScreen" style="display:none; padding:24px; max-width:480px; margin:0 auto;">
@@ -536,11 +549,6 @@ async function saveConfig() {
 }
 
 // ── API ──────────────────────────────────────────────────────────────────────
-// FIX: previously PATCH requests didn't set "return=representation", so
-// Supabase replied with an empty 204 body, and res.json() on an empty
-// body threw "Failed to execute 'json' on 'Response'". Now we always
-// ask for representation on POST/PATCH, and only parse JSON when there
-// is actually a body to parse (handles 204/empty responses safely).
 async function api(path, method='GET', body=null) {
   const opts = {
     method,
@@ -563,8 +571,6 @@ async function api(path, method='GET', body=null) {
   return text ? JSON.parse(text) : null;
 }
 
-// Uploads a raw File to Supabase Storage (bucket "photos") and returns its
-// public URL. Keeps large image data out of the database rows entirely.
 async function uploadToStorage(file, folder) {
   const ext = (file.name && file.name.includes('.')) ? file.name.split('.').pop().toLowerCase() : 'jpg';
   const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
@@ -763,7 +769,6 @@ async function changePassword() {
   if (newPw !== confirmPw) { errEl.textContent = 'New passwords do not match.'; return; }
   if (newPw.length < 4) { errEl.textContent = 'New password must be at least 4 characters.'; return; }
   try {
-    // Verify old password against the source of truth (Supabase), not just the local cache.
     const s = await api('settings?id=eq.1');
     const stored = (s && s.length) ? s[0].password : (localStorage.getItem('kg_pw') || 'gym123');
     if (oldPw !== stored) { errEl.textContent = 'Old password is incorrect.'; return; }
@@ -887,7 +892,7 @@ function showDetail(id) {
   const noteDates = (m.note_dates||[]);
   document.getElementById('detailContent').innerHTML = `
     <div class="detail-header">
-      ${m.photo_url ? `<img src="${m.photo_url}" class="detail-avatar" style="width:64px;height:64px;border-radius:50%;object-fit:cover;"/>` : `<div class="detail-avatar">${(m.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}</div>`}
+      ${m.photo_url ? `<img src="${m.photo_url}" class="detail-avatar" style="width:64px;height:64px;border-radius:50%;object-fit:cover;cursor:pointer;" onclick="openPhotoViewer('${m.photo_url}')"/>` : `<div class="detail-avatar">${(m.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}</div>`}
       <div>
         <div style="font-size:20px;font-weight:700;">${m.name}</div>
         ${statusBadge(m)}
@@ -923,6 +928,17 @@ function showDetail(id) {
     `).join('') : '<div class="empty" style="padding:20px 0;">No notes yet</div>'}
   `;
   showScreen('screenDetail');
+}
+
+// ── PHOTO VIEWER (WhatsApp-style tap-to-zoom) ─────────────────────────────────
+function openPhotoViewer(url) {
+  if (!url) return;
+  document.getElementById('photoViewerImg').src = url;
+  document.getElementById('photoViewer').classList.add('open');
+}
+function closePhotoViewer(e) {
+  if (e) e.stopPropagation();
+  document.getElementById('photoViewer').classList.remove('open');
 }
 
 // ── ADD / EDIT MEMBER ─────────────────────────────────────────────────────────
@@ -1011,9 +1027,6 @@ async function saveMember() {
   if (phone && phone.length !== 10) { document.getElementById('memberErr').textContent = 'Mobile number must be exactly 10 digits.'; return; }
   const isArchived = document.getElementById('fArchived').checked;
 
-  // Auto-draft: mobile number and photo are required for a "complete" profile.
-  // If either is missing, the member is saved as a Draft automatically —
-  // unless they're marked Archived, in which case completeness doesn't matter.
   const isComplete = !!phone && !!(pendingPhotoFile || photoBase64);
   const isDraft = isArchived ? false : !isComplete;
 
@@ -1101,13 +1114,6 @@ async function reactivateMember(id) {
 }
 
 // ── EXTEND MEMBERSHIP ──────────────────────────────────────────────────────────
-// Rule: new_end_date = current_end_date + plan_days.
-// This one formula naturally handles both cases:
-//  - Still active with days left (e.g. 2 days remaining): those 2 days
-//    carry forward on top of the new plan.
-//  - Already overdue (e.g. 3 days overdue): since current_end_date is
-//    3 days in the past, adding plan_days lands exactly plan_days - 3
-//    days from today — the overdue days are automatically deducted.
 function openExtendSheet(id) {
   const m = allMembers.find(x=>x.id===id);
   if (!m) return;
