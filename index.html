@@ -256,23 +256,6 @@ create policy "Anon can delete" on storage.objects for delete using (bucket_id =
   <div class="err" id="setupErr"></div>
 </div>
 
-<!-- ============ LOGIN SCREEN ============ -->
-<div id="loginScreen" style="display:none;">
-  <div class="login-wrap">
-    <img id="gymPhoto" src="" alt="Gym" style="width:100px;height:100px;border-radius:50%;object-fit:cover;border:2px solid var(--accent);margin-bottom:18px;display:none;"/>
-    <div class="login-logo">KRATOS</div>
-    <div class="login-tagline">Gym Management</div>
-    <div class="login-box">
-      <div class="field">
-        <label>Password</label>
-        <input type="password" id="loginPass" placeholder="Enter password" onkeydown="if(event.key==='Enter') doLogin()"/>
-      </div>
-      <button class="btn" onclick="doLogin()">Enter</button>
-      <div class="err" id="loginErr"></div>
-    </div>
-  </div>
-</div>
-
 <!-- ============ MAIN APP ============ -->
 <div id="mainApp" style="display:none;">
   <div class="app">
@@ -281,7 +264,6 @@ create policy "Anon can delete" on storage.objects for delete using (bucket_id =
         <div class="topbar-title">KRATOS</div>
         <div class="topbar-sub">GYM MANAGEMENT</div>
       </div>
-      <button class="btn btn-outline btn-sm" onclick="doLogout()">Logout</button>
     </div>
     <div class="content">
 
@@ -350,28 +332,7 @@ create policy "Anon can delete" on storage.objects for delete using (bucket_id =
         <div class="divider" style="margin:24px 0;"></div>
         <div class="sec-title" style="margin-bottom:14px;">Backup & Export</div>
         <div style="font-size:12px; color:var(--text2); margin-bottom:12px; line-height:1.5;">Download all member data as a CSV file — opens directly in Excel, Google Sheets, or Numbers. Good for a quick manual backup.</div>
-        <button class="btn btn-outline" onclick="exportMembersCSV()" style="margin-bottom:24px;">⬇️ Export All Members (CSV)</button>
-        <div class="divider" style="margin-bottom:24px;"></div>
-        <div class="sec-title" style="margin-bottom:14px;">Change Password</div>
-        <div class="field"><label>Old Password</label><input type="password" id="oldPass" placeholder="Enter current password"/></div>
-        <div class="field"><label>New Password</label><input type="password" id="newPass" placeholder="Enter new password"/></div>
-        <div class="field"><label>Re-enter New Password</label><input type="password" id="confirmPass" placeholder="Re-enter new password"/></div>
-        <button class="btn" onclick="changePassword()">Update Password</button>
-        <div class="err" id="passErr" style="margin-top:10px;"></div>
-        <div class="divider" style="margin:24px 0;"></div>
-        <div class="sec-title" style="margin-bottom:14px;">Gym Photo (shown on login page)</div>
-        <div style="text-align:center;">
-          <div class="photo-upload" id="gymPhotoPreview" style="width:96px;height:96px;margin-bottom:10px;">
-            <span class="photo-upload-label">🏋️</span>
-          </div>
-          <input type="file" id="gymPhotoInputCamera" accept="image/*" capture="environment" style="display:none" onchange="previewGymPhoto(this)"/>
-          <input type="file" id="gymPhotoInputGallery" accept="image/*" style="display:none" onchange="previewGymPhoto(this)"/>
-          <div style="display:flex; gap:8px; justify-content:center; margin-bottom:14px;">
-            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('gymPhotoInputCamera').click()">📸 Camera</button>
-            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('gymPhotoInputGallery').click()">🖼️ Gallery</button>
-          </div>
-        </div>
-        <button class="btn" onclick="saveGymPhoto()">Save Gym Photo</button>
+        <button class="btn btn-outline" onclick="exportMembersCSV()">⬇️ Export All Members (CSV)</button>
       </div>
 
     </div>
@@ -539,9 +500,8 @@ async function saveConfig() {
     localStorage.setItem('kg_url', url);
     localStorage.setItem('kg_key', key);
     localStorage.setItem('kg_plans', JSON.stringify(data[0].plans));
-    localStorage.setItem('kg_pw', data[0].password);
     errEl.textContent = 'Connected!';
-    setTimeout(() => showLogin(), 500);
+    setTimeout(() => showMain(), 500);
   } catch(e) {
     errEl.style.color = 'var(--danger)';
     errEl.textContent = 'Error: ' + e.message;
@@ -599,59 +559,25 @@ async function init() {
     const s = await api('settings?id=eq.1');
     if (!s || !s.length) throw new Error('no settings');
     localStorage.setItem('kg_plans', JSON.stringify(s[0].plans));
-    localStorage.setItem('kg_pw', s[0].password);
-    if (s[0].gym_photo) localStorage.setItem('kg_gym_photo', s[0].gym_photo);
-    showLogin();
+    showMain();
   } catch(e) {
-    if (localStorage.getItem('kg_pw')) { showLogin(); }
-    else { showSetup(); }
+    showMain();
   }
 }
 
 function showSetup() {
   document.getElementById('setupScreen').style.display = 'block';
-  document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('mainApp').style.display = 'none';
-}
-function showLogin() {
-  document.getElementById('setupScreen').style.display = 'none';
-  document.getElementById('loginScreen').style.display = 'block';
-  document.getElementById('mainApp').style.display = 'none';
-  applyGymPhotoToLogin();
-}
-function applyGymPhotoToLogin() {
-  const photo = localStorage.getItem('kg_gym_photo');
-  const img = document.getElementById('gymPhoto');
-  if (photo) { img.src = photo; img.style.display = 'block'; }
-  else { img.style.display = 'none'; }
 }
 async function showMain() {
-  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('setupScreen').style.display = 'none';
   document.getElementById('mainApp').style.display = 'block';
   await loadPlans();
   await loadMembers();
   renderDashboard();
   renderMembersList();
   renderPlansSettings();
-  const existingPhoto = localStorage.getItem('kg_gym_photo');
-  if (existingPhoto) {
-    gymPhotoBase64 = existingPhoto;
-    document.getElementById('gymPhotoPreview').innerHTML = `<img src="${existingPhoto}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>`;
-  }
 }
-
-// ── AUTH ─────────────────────────────────────────────────────────────────────
-async function doLogin() {
-  const pw = document.getElementById('loginPass').value;
-  let stored = localStorage.getItem('kg_pw') || 'gym123';
-  try {
-    const s = await api('settings?id=eq.1');
-    if (s && s.length) { stored = s[0].password; localStorage.setItem('kg_pw', stored); }
-  } catch(e) {}
-  if (pw === stored) { sessionStorage.setItem('kg_auth', '1'); showMain(); }
-  else { document.getElementById('loginErr').textContent = 'Wrong password.'; }
-}
-function doLogout() { sessionStorage.removeItem('kg_auth'); showLogin(); document.getElementById('loginPass').value = ''; }
 
 // ── PLANS ─────────────────────────────────────────────────────────────────────
 async function loadPlans() {
@@ -660,41 +586,9 @@ async function loadPlans() {
     if (s && s.length) {
       plans = s[0].plans;
       localStorage.setItem('kg_plans', JSON.stringify(plans));
-      if (s[0].gym_photo) localStorage.setItem('kg_gym_photo', s[0].gym_photo);
     }
     else { plans = JSON.parse(localStorage.getItem('kg_plans') || '[]'); }
   } catch(e) { plans = JSON.parse(localStorage.getItem('kg_plans') || '[]'); }
-}
-
-let gymPhotoBase64 = null;
-let pendingGymPhotoFile = null;
-
-function previewGymPhoto(input) {
-  const file = input.files[0];
-  if (!file) return;
-  pendingGymPhotoFile = file;
-  const reader = new FileReader();
-  reader.onload = e => {
-    gymPhotoBase64 = e.target.result;
-    document.getElementById('gymPhotoPreview').innerHTML = `<img src="${gymPhotoBase64}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>`;
-  };
-  reader.readAsDataURL(file);
-}
-
-async function saveGymPhoto() {
-  if (!pendingGymPhotoFile && !gymPhotoBase64) { toast('Pick a photo first'); return; }
-  try {
-    let url = gymPhotoBase64;
-    if (pendingGymPhotoFile) {
-      toast('Uploading...');
-      url = await uploadToStorage(pendingGymPhotoFile, 'gym');
-    }
-    await api('settings?id=eq.1', 'PATCH', {gym_photo: url});
-    localStorage.setItem('kg_gym_photo', url);
-    gymPhotoBase64 = url;
-    pendingGymPhotoFile = null;
-    toast('Gym photo updated!');
-  } catch(e) { toast('Error: ' + e.message); }
 }
 
 function renderPlansSettings() {
@@ -757,28 +651,6 @@ async function savePlans() {
     toast('Plans saved!');
     renderPlansSettings();
   } catch(e) { toast('Error: ' + e.message); }
-}
-
-async function changePassword() {
-  const oldPw = document.getElementById('oldPass').value;
-  const newPw = document.getElementById('newPass').value.trim();
-  const confirmPw = document.getElementById('confirmPass').value.trim();
-  const errEl = document.getElementById('passErr');
-  errEl.textContent = '';
-  if (!oldPw || !newPw || !confirmPw) { errEl.textContent = 'Fill in all three fields.'; return; }
-  if (newPw !== confirmPw) { errEl.textContent = 'New passwords do not match.'; return; }
-  if (newPw.length < 4) { errEl.textContent = 'New password must be at least 4 characters.'; return; }
-  try {
-    const s = await api('settings?id=eq.1');
-    const stored = (s && s.length) ? s[0].password : (localStorage.getItem('kg_pw') || 'gym123');
-    if (oldPw !== stored) { errEl.textContent = 'Old password is incorrect.'; return; }
-    await api('settings?id=eq.1', 'PATCH', {password: newPw});
-    localStorage.setItem('kg_pw', newPw);
-    document.getElementById('oldPass').value = '';
-    document.getElementById('newPass').value = '';
-    document.getElementById('confirmPass').value = '';
-    toast('Password updated!');
-  } catch(e) { errEl.textContent = 'Error: ' + e.message; }
 }
 
 // ── MEMBERS ───────────────────────────────────────────────────────────────────
@@ -1234,9 +1106,7 @@ function toast(msg) {
 
 // ── BOOT ──────────────────────────────────────────────────────────────────────
 window.onload = async () => {
-  getConfig();
-  if (sessionStorage.getItem('kg_auth')) { await loadPlans(); await loadMembers(); showMain(); }
-  else { init(); }
+  init();
 };
 </script>
 </body>
