@@ -316,7 +316,7 @@ create policy "Anon can delete" on storage.objects for delete using (bucket_id =
 
       <!-- MEMBER DETAIL SCREEN -->
       <div id="screenDetail" class="screen">
-        <button class="back-btn" onclick="showScreen('screenMembers')">
+        <button class="back-btn" onclick="backToMembers()">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="18" height="18"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
           Back
         </button>
@@ -456,6 +456,7 @@ let currentFilter = 'all';
 let currentSearch = '';
 let photoBase64 = null;
 let pendingPhotoFile = null;
+let membersScrollY = 0; // remembers how far the Members list was scrolled
 
 // Displays every date as dd/mm/yyyy while the underlying value stays yyyy-mm-dd
 // (required by Supabase's date columns and the native <input type="date">).
@@ -758,6 +759,9 @@ function setFilter(f, btn) {
 
 // ── DETAIL ────────────────────────────────────────────────────────────────────
 function showDetail(id) {
+  // remember exactly how far down the Members list we were scrolled
+  membersScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+
   const m = allMembers.find(x=>x.id===id);
   if (!m) return;
   const notes = (m.notes||[]);
@@ -800,6 +804,18 @@ function showDetail(id) {
     `).join('') : '<div class="empty" style="padding:20px 0;">No notes yet</div>'}
   `;
   showScreen('screenDetail');
+  window.scrollTo(0, 0); // detail screen should always open at the top
+}
+
+// ── NAV: return to Members list at the same scroll spot ──────────────────────
+function backToMembers() {
+  showScreen('screenMembers');
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  const membersNavBtn = document.querySelectorAll('.nav-btn')[1];
+  if (membersNavBtn) membersNavBtn.classList.add('active');
+  requestAnimationFrame(() => {
+    window.scrollTo(0, membersScrollY);
+  });
 }
 
 // ── PHOTO VIEWER (WhatsApp-style tap-to-zoom) ─────────────────────────────────
