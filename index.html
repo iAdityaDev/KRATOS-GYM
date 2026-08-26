@@ -388,8 +388,8 @@ create policy "Anon can delete" on storage.objects for delete using (bucket_id =
       <div class="field"><label>Days</label><input type="number" id="fDays" placeholder="30" oninput="calcEndDate()"/></div>
     </div>
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-      <div class="field"><label>Start Date</label><input type="date" id="fStart" oninput="calcEndDate()"/></div>
-      <div class="field"><label>End Date</label><input type="date" id="fEnd"/></div>
+      <div class="field"><label>Start Date</label><input type="date" id="fStart" oninput="calcEndDate()"/><div class="days-badge" id="fStartPreview" style="margin-top:6px;"></div></div>
+      <div class="field"><label>End Date</label><input type="date" id="fEnd" oninput="updateDatePreviews()"/><div class="days-badge" id="fEndPreview" style="margin-top:6px;"></div></div>
     </div>
 
     <div class="field" style="display:flex; align-items:center; gap:10px; margin-bottom:20px;">
@@ -847,6 +847,7 @@ function openAddMember() {
   document.getElementById('memberErr').textContent = '';
   document.getElementById('photoPreview').innerHTML = '<span class="photo-upload-label">📷</span>';
   renderPlanPills();
+  updateDatePreviews();
   document.getElementById('memberSheet').classList.add('open');
 }
 
@@ -869,6 +870,7 @@ function openEditMember(id) {
   if (m.photo_url) document.getElementById('photoPreview').innerHTML = `<img src="${m.photo_url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>`;
   else document.getElementById('photoPreview').innerHTML = '<span class="photo-upload-label">📷</span>';
   renderPlanPills(m.plan_name);
+  updateDatePreviews();
   document.getElementById('memberSheet').classList.add('open');
 }
 
@@ -882,7 +884,7 @@ function selectPlan(btn, name, days, fees) {
   btn.classList.add('selected');
   document.getElementById('fDays').value = days;
   document.getElementById('fFees').value = fees;
-  calcEndDate();
+  calcEndDate(); // this also calls updateDatePreviews()
 }
 
 function calcEndDate() {
@@ -893,6 +895,17 @@ function calcEndDate() {
     end.setDate(end.getDate() + days);
     document.getElementById('fEnd').value = end.toISOString().split('T')[0];
   }
+  updateDatePreviews();
+}
+
+// Native <input type="date"> always renders in the browser/OS locale format,
+// which can't be forced to dd/mm/yyyy. This shows a clear dd/mm/yyyy label
+// under each picker so what the user reads always matches the app's format.
+function updateDatePreviews() {
+  const start = document.getElementById('fStart').value;
+  const end = document.getElementById('fEnd').value;
+  document.getElementById('fStartPreview').textContent = start ? formatDateDMY(start) : '';
+  document.getElementById('fEndPreview').textContent = end ? formatDateDMY(end) : '';
 }
 
 function previewPhoto(input) {
