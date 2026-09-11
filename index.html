@@ -20,6 +20,7 @@
     --danger: #ff5c5c;
     --warning: #ffaa00;
     --success: #22c55e;
+    --paylater: #3aa0ff;
     --radius: 10px;
     --radius-lg: 16px;
   }
@@ -72,6 +73,7 @@
   .badge-soon { background: rgba(255,170,0,0.15); color: var(--warning); }
   .badge-draft { background: rgba(138,122,122,0.15); color: var(--text2); }
   .badge-archived { background: rgba(138,122,122,0.25); color: var(--text3); }
+  .badge-paylater { background: rgba(58,160,255,0.15); color: var(--paylater); }
   .meta-row { display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
   .meta-item { font-size: 12px; color: var(--text2); }
   .meta-item span { color: var(--text); font-weight: 500; }
@@ -192,6 +194,7 @@
     <strong style="color:var(--accent);">Already have a project running?</strong><br>
     Just run these lines in your existing Supabase SQL Editor, then reload the app — no need to redo setup:
     <pre style="margin-top:8px; background:var(--bg); padding:10px; border-radius:6px; overflow-x:auto; font-size:11px; color:var(--text); white-space:pre-wrap;">alter table members add column if not exists is_archived boolean default false;
+alter table members add column if not exists is_pay_later boolean default false;
 alter table settings add column if not exists gym_photo text;
 insert into storage.buckets (id, name, public) values ('photos', 'photos', true)
 on conflict (id) do nothing;
@@ -216,6 +219,7 @@ create table members (
   end_date date,
   is_draft boolean default false,
   is_archived boolean default false,
+  is_pay_later boolean default false,
   notes text[],
   note_dates text[],
   created_at timestamptz default now()
@@ -286,7 +290,11 @@ create policy "Anon can delete" on storage.objects for delete using (bucket_id =
             <div class="stat-label">Expired</div>
             <div class="stat-value danger" id="statExpired">-</div>
           </div>
-          <div class="stat-card" style="grid-column: span 2;">
+          <div class="stat-card">
+            <div class="stat-label">Pay Later</div>
+            <div class="stat-value" id="statPayLater" style="color:var(--paylater);">-</div>
+          </div>
+          <div class="stat-card">
             <div class="stat-label">Archived</div>
             <div class="stat-value" id="statArchived" style="color:var(--text2);">-</div>
           </div>
@@ -308,6 +316,7 @@ create policy "Anon can delete" on storage.objects for delete using (bucket_id =
           <button class="filter-tab" onclick="setFilter('active',this)">Active</button>
           <button class="filter-tab" onclick="setFilter('expiring',this)">Expiring Soon</button>
           <button class="filter-tab" onclick="setFilter('expired',this)">Expired</button>
+          <button class="filter-tab" onclick="setFilter('paylater',this)">Pay Later</button>
           <button class="filter-tab" onclick="setFilter('draft',this)">Drafts</button>
           <button class="filter-tab" onclick="setFilter('archived',this)">Archived</button>
         </div>
@@ -395,6 +404,10 @@ create policy "Anon can delete" on storage.objects for delete using (bucket_id =
     <div class="field" style="display:flex; align-items:center; gap:10px; margin-bottom:20px;">
       <input type="checkbox" id="fArchived" style="width:18px; height:18px; accent-color:var(--accent);"/>
       <label for="fArchived" style="font-size:14px; color:var(--text); margin-bottom:0;">Archived (member left the gym, keep on record)</label>
+    </div>
+    <div class="field" style="display:flex; align-items:center; gap:10px; margin-bottom:20px;">
+      <input type="checkbox" id="fPayLater" style="width:18px; height:18px; accent-color:var(--paylater);"/>
+      <label for="fPayLater" style="font-size:14px; color:var(--text); margin-bottom:0;">Pay Later (fees pending, follow up)</label>
     </div>
     <div style="font-size:12px; color:var(--text3); margin-bottom:16px;">Note: if mobile number or photo is missing, this member is saved automatically as a Draft (unless marked Archived above).</div>
 
@@ -618,7 +631,7 @@ async function exportMembersCSV() {
   try {
     const data = await api('members?order=created_at.desc');
     const statusLabels = {active:'Active', expired:'Expired', expiring:'Expiring Soon', draft:'Draft', archived:'Archived'};
-    const headers = ['Name','Phone','Address','Plan','Fees Paid','Days','Start Date','End Date','Status','Notes'];
+    const headers = ['Name','Phone','Address','Plan','Fees Paid','Days','Start Date','End Date','Status','Pay Later','Notes'];
     const rows = data.map(m => [
       m.name||'',
       m.phone||'',
@@ -629,6 +642,7 @@ async function exportMembersCSV() {
       formatDateDMY(m.start_date),
       formatDateDMY(m.end_date),
       statusLabels[memberStatus(m)],
+      m.is_pay_later ? 'Yes' : 'No',
       (m.notes||[]).join(' | ')
     ]);
     const csv = [headers, ...rows].map(r=>r.map(csvEscape).join(',')).join('\n');
@@ -678,6 +692,10 @@ function statusBadge(m) {
   return `<span class="badge ${classes[s]}">${labels[s]}</span>`;
 }
 
+function payLaterTag(m) {
+  return m.is_pay_later ? '<span class="badge badge-paylater">Pay Later</span>' : '';
+}
+
 function avatarEl(m, size=44) {
   const initials = (m.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
   if (m.photo_url) {
@@ -696,7 +714,8 @@ function daysLeft(m) {
 function renderMembersList() {
   const el = document.getElementById('membersList');
   let list = allMembers;
-  if (currentFilter !== 'all') list = list.filter(m => memberStatus(m) === currentFilter);
+  if (currentFilter === 'paylater') list = list.filter(m => m.is_pay_later);
+  else if (currentFilter !== 'all') list = list.filter(m => memberStatus(m) === currentFilter);
   if (currentSearch) {
     const q = currentSearch.toLowerCase();
     list = list.filter(m => (m.name||'').toLowerCase().includes(q) || (m.phone||'').includes(q));
@@ -712,7 +731,7 @@ function renderMembersList() {
             <div class="member-phone">${m.phone||'No phone'}</div>
           </div>
         </div>
-        ${statusBadge(m)}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">${statusBadge(m)}${payLaterTag(m)}</div>
       </div>
       <div class="meta-row">
         <div class="meta-item">Plan: <span>${m.plan_name||'Custom'}</span></div>
@@ -729,6 +748,7 @@ function renderDashboard() {
   document.getElementById('statActive').textContent = real.filter(m=>memberStatus(m)==='active').length;
   document.getElementById('statSoon').textContent = real.filter(m=>memberStatus(m)==='expiring').length;
   document.getElementById('statExpired').textContent = real.filter(m=>memberStatus(m)==='expired').length;
+  document.getElementById('statPayLater').textContent = real.filter(m=>m.is_pay_later).length;
   document.getElementById('statArchived').textContent = allMembers.filter(m=>m.is_archived).length;
   const soon = real.filter(m=>memberStatus(m)==='expiring');
   const el = document.getElementById('expiringSoonList');
@@ -771,7 +791,7 @@ function showDetail(id) {
       ${m.photo_url ? `<img src="${m.photo_url}" class="detail-avatar" style="width:64px;height:64px;border-radius:50%;object-fit:cover;cursor:pointer;" onclick="openPhotoViewer('${m.photo_url}')"/>` : `<div class="detail-avatar">${(m.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}</div>`}
       <div>
         <div style="font-size:20px;font-weight:700;">${m.name}</div>
-        ${statusBadge(m)}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">${statusBadge(m)}${payLaterTag(m)}</div>
       </div>
     </div>
     <div class="card">
@@ -789,6 +809,11 @@ function showDetail(id) {
     <div class="row-btns">
       <button class="btn btn-outline btn-sm" onclick="openEditMember('${id}')">✏️ Edit</button>
       <button class="btn btn-sm" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);" onclick="openNoteSheet('${id}')">+ Note</button>
+      ${!m.is_archived
+        ? (m.is_pay_later
+          ? `<button class="btn btn-sm" style="background:var(--success);color:#0d0d0d;" onclick="markPaid('${id}')">✅ Mark Paid</button>`
+          : `<button class="btn btn-sm" style="background:var(--surface2);color:var(--paylater);border:1px solid var(--border);" onclick="markPayLater('${id}')">💰 Pay Later</button>`)
+        : ''}
       ${m.is_archived
         ? `<button class="btn btn-sm" style="background:var(--success);color:#0d0d0d;" onclick="reactivateMember('${id}')">↩ Reactivate & Renew</button>`
         : `<button class="btn btn-sm" style="background:var(--surface2);color:var(--warning);border:1px solid var(--border);" onclick="archiveMember('${id}')">📦 Archive</button>`}
@@ -839,6 +864,7 @@ function openAddMember() {
   document.getElementById('fFees').value = '';
   document.getElementById('fDays').value = '';
   document.getElementById('fArchived').checked = false;
+  document.getElementById('fPayLater').checked = false;
   photoBase64 = null;
   pendingPhotoFile = null;
   const today = new Date().toISOString().split('T')[0];
@@ -864,6 +890,7 @@ function openEditMember(id) {
   document.getElementById('fStart').value = m.start_date||'';
   document.getElementById('fEnd').value = m.end_date||'';
   document.getElementById('fArchived').checked = m.is_archived||false;
+  document.getElementById('fPayLater').checked = m.is_pay_later||false;
   document.getElementById('memberErr').textContent = '';
   photoBase64 = m.photo_url || null;
   pendingPhotoFile = null;
@@ -958,6 +985,7 @@ async function saveMember() {
     end_date: document.getElementById('fEnd').value||null,
     is_draft: isDraft,
     is_archived: isArchived,
+    is_pay_later: document.getElementById('fPayLater').checked,
     plan_name: selectedPill ? selectedPill.textContent : 'Custom',
     photo_url: photoUrl||null
   };
@@ -1001,6 +1029,36 @@ async function archiveMember(id) {
     showDetail(id);
     renderDashboard();
     toast('Member archived');
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+async function markPayLater(id) {
+  const m = allMembers.find(x=>x.id===id);
+  if (!m) return;
+  try {
+    const notes = [...(m.notes||[]), 'Moved to Pay Later — fees pending.'];
+    const noteDates = [...(m.note_dates||[]), todayDMY()];
+    await api(`members?id=eq.${id}`, 'PATCH', {is_pay_later: true, notes, note_dates: noteDates});
+    await loadMembers();
+    showDetail(id);
+    renderDashboard();
+    renderMembersList();
+    toast('Marked as Pay Later');
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+async function markPaid(id) {
+  const m = allMembers.find(x=>x.id===id);
+  if (!m) return;
+  try {
+    const notes = [...(m.notes||[]), 'Pay Later cleared — fees received.'];
+    const noteDates = [...(m.note_dates||[]), todayDMY()];
+    await api(`members?id=eq.${id}`, 'PATCH', {is_pay_later: false, notes, note_dates: noteDates});
+    await loadMembers();
+    showDetail(id);
+    renderDashboard();
+    renderMembersList();
+    toast('Marked as Paid');
   } catch(e) { toast('Error: ' + e.message); }
 }
 
