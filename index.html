@@ -6,6 +6,8 @@
 <meta name="theme-color" content="#0d0d0d"/>
 <link rel="manifest" href="#"/>
 <title>KRATOS GYM</title>
+<!-- JSZip: used to bundle member data + photos into one ZIP on export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root {
     --bg: #0d0d0d;
@@ -56,6 +58,7 @@
   .btn { width: 100%; padding: 14px; background: var(--accent); color: #fff; font-size: 15px; font-weight: 700; border: none; border-radius: var(--radius); cursor: pointer; letter-spacing: 0.5px; transition: background 0.15s; }
   .btn:hover { background: var(--accent-dim); }
   .btn:active { transform: scale(0.98); }
+  .btn:disabled { opacity: 0.6; cursor: not-allowed; }
   .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
   .btn-outline:hover { background: var(--surface2); }
   .btn-danger { background: var(--danger); color: #1a0000; }
@@ -340,8 +343,12 @@ create policy "Anon can delete" on storage.objects for delete using (bucket_id =
         <button class="btn" onclick="savePlans()">Save Plans</button>
         <div class="divider" style="margin:24px 0;"></div>
         <div class="sec-title" style="margin-bottom:14px;">Backup & Export</div>
-        <div style="font-size:12px; color:var(--text2); margin-bottom:12px; line-height:1.5;">Download all member data as a CSV file — opens directly in Excel, Google Sheets, or Numbers. Good for a quick manual backup.</div>
-        <button class="btn btn-outline" onclick="exportMembersCSV()">⬇️ Export All Members (CSV)</button>
+        <div style="font-size:12px; color:var(--text2); margin-bottom:12px; line-height:1.5;">
+          <strong style="color:var(--text);">With Photos (ZIP)</strong> — one ZIP containing <code>members.csv</code> and a <code>photos/</code> folder. The CSV has a "Photo File" column pointing to each member's photo. Unzip it before opening the CSV. Full backup.<br><br>
+          <strong style="color:var(--text);">CSV only</strong> — data without photos (opens directly in Excel, Google Sheets, or Numbers). The CSV still includes a "Photo URL" column.
+        </div>
+        <button class="btn" id="exportZipBtn" onclick="exportMembersZIP()" style="margin-bottom:10px;">📦 Export All Members + Photos (ZIP)</button>
+        <button class="btn btn-outline" onclick="exportMembersCSV()">⬇️ Export All Members (CSV only)</button>
       </div>
 
     </div>
@@ -620,19 +627,33 @@ function renderPlansSettings() {
 
 function addPlanRow() { plans.push({name:'', days:30, fees:0}); renderPlansSettings(); }
 
+// ── EXPORT ────────────────────────────────────────────────────────────────────
 function csvEscape(v) {
   if (v === null || v === undefined) return '';
   const s = String(v).replace(/"/g,'""');
   return /[",\n]/.test(s) ? `"${s}"` : s;
 }
 
-async function exportMembersCSV() {
-  toast('Preparing export...');
-  try {
-    const data = await api('members?order=created_at.desc');
-    const statusLabels = {active:'Active', expired:'Expired', expiring:'Expiring Soon', draft:'Draft', archived:'Archived'};
-    const headers = ['Name','Phone','Address','Plan','Fees Paid','Days','Start Date','End Date','Status','Pay Later','Notes'];
-    const rows = data.map(m => [
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Builds the CSV text. photoFiles = { memberId: 'photos/001_name.jpg' } (ZIP export only).
+// Data-URL photos (old rows saved before Storage was added) are never dumped into the CSV.
+function buildMembersCSV(data, photoFiles) {
+  const statusLabels = {active:'Active', expired:'Expired', expiring:'Expiring Soon', draft:'Draft', archived:'Archived'};
+  const withFiles = !!photoFiles;
+  const headers = ['Name','Phone','Address','Plan','Fees Paid','Days','Start Date','End Date','Status','Pay Later','Notes'];
+  headers.push(withFiles ? 'Photo File' : 'Photo URL');
+  const rows = data.map(m => {
+    const row = [
       m.name||'',
       m.phone||'',
       m.address||'',
@@ -644,19 +665,76 @@ async function exportMembersCSV() {
       statusLabels[memberStatus(m)],
       m.is_pay_later ? 'Yes' : 'No',
       (m.notes||[]).join(' | ')
-    ]);
-    const csv = [headers, ...rows].map(r=>r.map(csvEscape).join(',')).join('\n');
-    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `kratos_gym_members_${todayDMY().replace(/\//g,'-')}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    ];
+    if (withFiles) row.push(photoFiles[m.id] || '');
+    else row.push((m.photo_url && !m.photo_url.startsWith('data:')) ? m.photo_url : '');
+    return row;
+  });
+  // BOM so Excel reads UTF-8 (₹, non-English names) correctly
+  return '\uFEFF' + [headers, ...rows].map(r=>r.map(csvEscape).join(',')).join('\n');
+}
+
+async function exportMembersCSV() {
+  toast('Preparing export...');
+  try {
+    const data = await api('members?order=created_at.desc');
+    const csv = buildMembersCSV(data, null);
+    downloadBlob(new Blob([csv], {type:'text/csv;charset=utf-8;'}), `kratos_gym_members_${todayDMY().replace(/\//g,'-')}.csv`);
     toast('Export downloaded!');
   } catch(e) { toast('Error: ' + e.message); }
+}
+
+function photoExt(blob, url) {
+  const map = {'image/jpeg':'jpg','image/jpg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif','image/heic':'heic','image/heif':'heif'};
+  if (blob.type && map[blob.type]) return map[blob.type];
+  if (!url.startsWith('data:')) {
+    const m = url.split('?')[0].match(/\.([a-zA-Z0-9]{2,5})$/);
+    if (m) return m[1].toLowerCase();
+  }
+  return 'jpg';
+}
+
+async function exportMembersZIP() {
+  if (typeof JSZip === 'undefined') { toast('ZIP library failed to load — check internet'); return; }
+  const btn = document.getElementById('exportZipBtn');
+  const origLabel = btn.textContent;
+  btn.disabled = true;
+  try {
+    btn.textContent = 'Fetching members...';
+    const data = await api('members?order=created_at.desc');
+    const zip = new JSZip();
+    const photoFolder = zip.folder('photos');
+    const photoFiles = {};
+    const withPhoto = data.filter(m => m.photo_url);
+    let done = 0, failed = 0;
+
+    for (let i = 0; i < data.length; i++) {
+      const m = data[i];
+      if (!m.photo_url) continue;
+      done++;
+      btn.textContent = `Downloading photos ${done}/${withPhoto.length}...`;
+      try {
+        const res = await fetch(m.photo_url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const blob = await res.blob();
+        const safe = (m.name||'member').replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'').slice(0,40) || 'member';
+        const fname = `${String(i+1).padStart(3,'0')}_${safe}.${photoExt(blob, m.photo_url)}`;
+        photoFolder.file(fname, blob);
+        photoFiles[m.id] = 'photos/' + fname;
+      } catch(_) { failed++; }
+    }
+
+    btn.textContent = 'Building ZIP...';
+    zip.file('members.csv', buildMembersCSV(data, photoFiles));
+    const blob = await zip.generateAsync({type:'blob', compression:'DEFLATE'});
+    downloadBlob(blob, `kratos_gym_members_${todayDMY().replace(/\//g,'-')}.zip`);
+    toast(failed ? `Exported. ${failed} photo(s) could not be fetched` : 'Export downloaded!');
+  } catch(e) {
+    toast('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origLabel;
+  }
 }
 
 async function savePlans() {
